@@ -1,13 +1,16 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { convexQuery } from "@convex-dev/react-query";
 import { api } from "../../convex/_generated/api";
 import { PlayerFilters, type PlayerFiltersState } from "@/components/app/PlayerFilters";
 import { PlayersTable } from "@/components/app/PlayersTable";
 import { Pagination } from "@/components/app/Pagination";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Users } from "lucide-react";
+import { Users, SlidersHorizontal, X } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import type { Id } from "../../convex/_generated/dataModel";
 
 // Search params for URL state
@@ -45,6 +48,7 @@ export const Route = createFileRoute("/players/")({
 function PlayersPage() {
   const navigate = useNavigate({ from: Route.fullPath });
   const searchParams = Route.useSearch();
+  const [isFiltersOpen, setIsFiltersOpen] = useState(false);
 
   // Convert search params to filter state
   const filters: PlayerFiltersState = {
@@ -147,35 +151,94 @@ function PlayersPage() {
       ]
     : [];
 
+  // Count active filters for badge
+  const activeFilterCount = [
+    filters.search,
+    filters.country,
+    filters.competitionId,
+    filters.tier,
+    filters.positionGroup,
+    filters.minMinutes !== 90,
+    filters.window !== "365",
+  ].filter(Boolean).length;
+
   return (
     <div className="container mx-auto px-4 py-8">
       {/* Page Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-          <Users className="h-5 w-5 text-primary" />
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+            <Users className="h-5 w-5 text-primary" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold">Spelers</h1>
+            <p className="text-sm text-muted-foreground">
+              Ranking en statistieken van spelers
+            </p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-2xl font-bold">Spelers</h1>
-          <p className="text-sm text-muted-foreground">
-            Ranking en statistieken van spelers
-          </p>
-        </div>
+
+        {/* Mobile Filter Toggle Button */}
+        <Button
+          variant={isFiltersOpen ? "default" : "outline"}
+          size="sm"
+          onClick={() => setIsFiltersOpen(!isFiltersOpen)}
+          className="md:hidden relative"
+        >
+          {isFiltersOpen ? (
+            <X className="h-4 w-4 mr-2" />
+          ) : (
+            <SlidersHorizontal className="h-4 w-4 mr-2" />
+          )}
+          Filters
+          {activeFilterCount > 0 && !isFiltersOpen && (
+            <span className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center">
+              {activeFilterCount}
+            </span>
+          )}
+        </Button>
       </div>
 
-      {/* Filters */}
-      <Card className="mb-6">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Filters</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <PlayerFilters
-            filters={filters}
-            onFiltersChange={handleFiltersChange}
-            countries={countries}
-            competitions={competitions.map((c) => ({ _id: c._id, name: c.name }))}
-          />
-        </CardContent>
-      </Card>
+      {/* Filters - Always visible on desktop, animated on mobile */}
+      <div className="hidden md:block mb-6">
+        <Card>
+          <CardContent className="pt-6">
+            <PlayerFilters
+              filters={filters}
+              onFiltersChange={handleFiltersChange}
+              countries={countries}
+              competitions={competitions.map((c) => ({ _id: c._id, name: c.name }))}
+            />
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Mobile Filters with Animation */}
+      <AnimatePresence>
+        {isFiltersOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{
+              duration: 0.2,
+              ease: [0.25, 0.46, 0.45, 0.94]
+            }}
+            className="md:hidden overflow-hidden mb-6"
+          >
+            <Card>
+              <CardContent className="pt-6">
+                <PlayerFilters
+                  filters={filters}
+                  onFiltersChange={handleFiltersChange}
+                  countries={countries}
+                  competitions={competitions.map((c) => ({ _id: c._id, name: c.name }))}
+                />
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Results */}
       {isLoading ? (
