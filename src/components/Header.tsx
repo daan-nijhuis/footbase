@@ -1,6 +1,6 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
-import { Users, Trophy, Bug } from "lucide-react";
+import { Users, Trophy } from "lucide-react";
 
 function NavLink({
   to,
@@ -47,9 +47,6 @@ export default function Header() {
           </NavLink>
           <NavLink to="/competitions" icon={Trophy}>
             Competities
-          </NavLink>
-          <NavLink to="/debug" icon={Bug}>
-            Debug
           </NavLink>
         </div>
       </nav>

@@ -481,6 +481,9 @@ export const recomputeRollingStatsAndRatings = internalAction({
     competitionId: v.optional(v.id("competitions")),
     country: v.optional(v.string()),
     dryRun: v.optional(v.boolean()),
+    // Custom date range (for testing with historical data)
+    customFromDate: v.optional(v.string()),
+    customToDate: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<RatingComputationResult> => {
     const dryRun = args.dryRun ?? false;
@@ -535,11 +538,22 @@ export const recomputeRollingStatsAndRatings = internalAction({
     }
 
     // Step 4: Compute rolling window dates
-    const today = new Date();
-    const fromDate365 = new Date(today);
-    fromDate365.setDate(fromDate365.getDate() - ROLLING_WINDOW_DAYS);
-    const fromDateStr = fromDate365.toISOString().split("T")[0];
-    const toDateStr = today.toISOString().split("T")[0];
+    let fromDateStr: string;
+    let toDateStr: string;
+
+    if (args.customFromDate && args.customToDate) {
+      // Use custom date range
+      fromDateStr = args.customFromDate;
+      toDateStr = args.customToDate;
+      console.log(`[Ratings] Using custom date range: ${fromDateStr} to ${toDateStr}`);
+    } else {
+      // Default: rolling window from today
+      const today = new Date();
+      const fromDate365 = new Date(today);
+      fromDate365.setDate(fromDate365.getDate() - ROLLING_WINDOW_DAYS);
+      fromDateStr = fromDate365.toISOString().split("T")[0];
+      toDateStr = today.toISOString().split("T")[0];
+    }
 
     console.log(`[Ratings] Rolling window: ${fromDateStr} to ${toDateStr}`);
 

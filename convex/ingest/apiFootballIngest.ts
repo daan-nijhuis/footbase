@@ -297,6 +297,10 @@ export const upsertAppearance = internalMutation({
       providerTeamId: v.string(),
       matchDate: v.string(),
       minutes: v.number(),
+      // Player info for auto-creating players from fixtures
+      playerName: v.optional(v.string()),
+      playerPhoto: v.optional(v.string()),
+      playerPosition: v.optional(v.string()),
       stats: v.object({
         goals: v.optional(v.number()),
         assists: v.optional(v.number()),
@@ -325,14 +329,7 @@ export const upsertAppearance = internalMutation({
     competitionId: v.id("competitions"),
   },
   handler: async (ctx, args) => {
-    // Find player and team
-    const player = await ctx.db
-      .query("players")
-      .withIndex("by_provider_player", (q) =>
-        q.eq("provider", "apiFootball").eq("providerPlayerId", args.data.providerPlayerId)
-      )
-      .first();
-
+    // Find team first (required)
     const team = await ctx.db
       .query("teams")
       .withIndex("by_provider_team", (q) =>
@@ -340,10 +337,58 @@ export const upsertAppearance = internalMutation({
       )
       .first();
 
-    if (!player || !team) {
+    if (!team) {
       console.warn(
-        `[Ingest] Player or team not found for appearance (player: ${args.data.providerPlayerId}, team: ${args.data.providerTeamId})`
+        `[Ingest] Team not found for appearance (team: ${args.data.providerTeamId})`
       );
+      return null;
+    }
+
+    // Find or auto-create player
+    let player = await ctx.db
+      .query("players")
+      .withIndex("by_provider_player", (q) =>
+        q.eq("provider", "apiFootball").eq("providerPlayerId", args.data.providerPlayerId)
+      )
+      .first();
+
+    if (!player) {
+      // Auto-create player from fixture data if we have the info
+      if (args.data.playerName) {
+        // Map position to position group
+        const position = args.data.playerPosition || "Unknown";
+        let positionGroup: "GK" | "DEF" | "MID" | "ATT" = "MID";
+        const posNorm = position.toUpperCase();
+        if (posNorm === "G" || posNorm.includes("GOALKEEPER")) {
+          positionGroup = "GK";
+        } else if (posNorm === "D" || posNorm.includes("DEFENDER") || posNorm.includes("BACK")) {
+          positionGroup = "DEF";
+        } else if (posNorm === "F" || posNorm.includes("FORWARD") || posNorm.includes("ATTACKER")) {
+          positionGroup = "ATT";
+        }
+
+        const playerId = await ctx.db.insert("players", {
+          provider: "apiFootball",
+          providerPlayerId: args.data.providerPlayerId,
+          name: args.data.playerName,
+          position,
+          positionGroup,
+          photoUrl: args.data.playerPhoto,
+          teamId: team._id,
+          competitionId: args.competitionId,
+          createdAt: Date.now(),
+        });
+        player = await ctx.db.get(playerId);
+        console.log(`[Ingest] Auto-created player: ${args.data.playerName} (${positionGroup})`);
+      } else {
+        console.warn(
+          `[Ingest] Player not found and no player info to auto-create (player: ${args.data.providerPlayerId})`
+        );
+        return null;
+      }
+    }
+
+    if (!player) {
       return null;
     }
 
@@ -766,18 +811,24 @@ export const ingestRecentFixtures = internalAction({
               incrementRequests(ingestionCtx, 2); // This endpoint makes 2 requests internally
 
               for (const appearance of playerStats.items) {
-                await ctx.runMutation(internal.ingest.apiFootballIngest.upsertAppearance, {
+                const result = await ctx.runMutation(internal.ingest.apiFootballIngest.upsertAppearance, {
                   data: {
                     providerPlayerId: appearance.providerPlayerId,
                     providerFixtureId: appearance.providerFixtureId,
                     providerTeamId: appearance.providerTeamId,
                     matchDate: appearance.matchDate,
                     minutes: appearance.minutes,
+                    // Include player info for auto-creation
+                    playerName: appearance.playerName,
+                    playerPhoto: appearance.playerPhoto,
+                    playerPosition: appearance.playerPosition,
                     stats: appearance.stats,
                   },
                   competitionId: competition._id,
                 });
-                ingestionCtx.summary.appearancesProcessed++;
+                if (result) {
+                  ingestionCtx.summary.appearancesProcessed++;
+                }
               }
 
               console.log(

@@ -334,7 +334,7 @@ export interface CompetitionRatingResult {
 // Constants
 // ============================================================================
 
-export const MIN_MINUTES_FOR_RATING = 300;
+export const MIN_MINUTES_FOR_RATING = 90;
 export const ROLLING_WINDOW_DAYS = 365;
 export const FORM_WINDOW_MATCHES = 5;
 export const TOP_N_FOR_COMPETITION_STRENGTH = 25;

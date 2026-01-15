@@ -32,7 +32,7 @@ export const Route = createFileRoute("/players/")({
       competitionId: (search.competitionId as string) || undefined,
       tier: (search.tier as string) || undefined,
       positionGroup: (search.positionGroup as string) || undefined,
-      minMinutes: search.minMinutes ? Number(search.minMinutes) : undefined,
+      minMinutes: search.minMinutes !== undefined ? Number(search.minMinutes) : undefined,
       window: (search.window as "365" | "last5") || undefined,
       page: search.page ? Number(search.page) : undefined,
       sort: (search.sort as string) || undefined,

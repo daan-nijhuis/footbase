@@ -3,11 +3,18 @@
  *
  * This module contains the internal action that runs the daily ingestion.
  * It's called by the cron job defined in crons.ts.
+ *
+ * Pipeline steps:
+ * 1. Ingest competitions, teams, players from API-Football
+ * 2. Ingest recent fixtures for match stats
+ * 3. Recompute rolling stats and ratings
+ * 4. Enrich players from FotMob and SofaScore (new)
  */
 
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { IngestionResult } from "./apiFootballIngest";
+import type { EnrichmentResult } from "../enrichment/enrichActions";
 
 // Re-export for use in admin.ts
 export type { IngestionResult };
@@ -26,8 +33,9 @@ function formatDate(date: Date): string {
  * 1. Runs ingestCountries for Netherlands and Germany
  * 2. Runs ingestRecentFixtures for the last 2 days
  * 3. Recomputes player and competition ratings
+ * 4. Enriches players from FotMob and SofaScore
  *
- * Budget: ~80 requests total to stay within free plan limits
+ * Budget: ~80 API-Football requests + ~35 enrichment requests
  */
 export interface DailyIngestionResult {
   success: boolean;
@@ -39,6 +47,11 @@ export interface DailyIngestionResult {
     playersProcessed: number;
     ratingsComputed: number;
     competitionsRated: number;
+  };
+  enrichmentResult?: {
+    fotmob: EnrichmentResult;
+    sofascore: EnrichmentResult;
+    totalPlayersEnriched: number;
   };
 }
 
@@ -105,6 +118,25 @@ export const runDailyIngestion = internalAction({
       };
     }
 
+    // Step 4: Enrich players from FotMob and SofaScore
+    // Budget: ~20 FotMob requests + ~15 SofaScore requests
+    console.log("[Cron] Step 4: Enriching players from external providers...");
+    let enrichmentResult;
+    try {
+      enrichmentResult = await ctx.runAction(
+        internal.enrichment.enrichActions.enrichPlayersFromAllProviders,
+        {
+          fotMobRequests: 20,
+          sofaScoreRequests: 15,
+          batchSize: 10,
+        }
+      );
+      console.log("[Cron] Enrichment result:", enrichmentResult);
+    } catch (error) {
+      console.error("[Cron] Enrichment failed:", error);
+      enrichmentResult = undefined;
+    }
+
     const totalRequests =
       (countriesResult.requestsUsed || 0) + (fixturesResult.requestsUsed || 0);
 
@@ -116,6 +148,7 @@ export const runDailyIngestion = internalAction({
       countriesResult,
       fixturesResult,
       ratingsResult,
+      enrichmentResult,
     };
   },
 });

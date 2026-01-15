@@ -282,6 +282,10 @@ export interface CanonicalAppearance {
   providerTeamId: string;
   matchDate: string;
   minutes: number;
+  // Player info for auto-creating players from fixtures
+  playerName?: string;
+  playerPhoto?: string;
+  playerPosition?: string;
   stats: {
     goals?: number;
     assists?: number;
@@ -523,6 +527,10 @@ export async function fetchFixturePlayerStats(
         providerTeamId: teamStats.team.id.toString(),
         matchDate,
         minutes,
+        // Player info for auto-creating players from fixtures
+        playerName: playerData.player.name,
+        playerPhoto: playerData.player.photo,
+        playerPosition: stats.games.position ?? undefined,
         stats: {
           goals: stats.goals.total ?? undefined,
           assists: stats.goals.assists ?? undefined,

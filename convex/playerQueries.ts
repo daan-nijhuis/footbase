@@ -115,9 +115,10 @@ export const list = query({
         }
       }
 
-      // Minutes filter
+      // Minutes filter - treat players without stats as having 0 minutes
       const stats = rollingStatsMap.get(player._id);
-      if (stats && stats.minutes < minMinutes) {
+      const playerMinutes = stats?.minutes ?? 0;
+      if (playerMinutes < minMinutes) {
         return false;
       }
 
@@ -143,6 +144,11 @@ export const list = query({
       positionGroup: string;
       position: string;
       photoUrl: string | undefined;
+      // Enriched profile fields
+      heightCm: number | undefined;
+      weightKg: number | undefined;
+      preferredFoot: string | undefined;
+      // Team/competition
       teamId: Id<"teams">;
       teamName: string;
       teamLogoUrl: string | undefined;
@@ -150,6 +156,7 @@ export const list = query({
       competitionName: string;
       competitionLogoUrl: string | undefined;
       tier: string | undefined;
+      // Stats
       minutes: number;
       rating365: number | undefined;
       ratingLast5: number | undefined;
@@ -171,6 +178,10 @@ export const list = query({
         positionGroup: player.positionGroup,
         position: player.position,
         photoUrl: player.photoUrl,
+        // Include enriched profile fields
+        heightCm: player.heightCm,
+        weightKg: player.weightKg,
+        preferredFoot: player.preferredFoot,
         teamId: player.teamId,
         teamName: team?.name ?? "Unknown",
         teamLogoUrl: team?.logoUrl,
@@ -230,7 +241,7 @@ export const list = query({
 });
 
 /**
- * Get a single player with full details
+ * Get a single player with full details including enriched data
  */
 export const get = query({
   args: {
@@ -273,6 +284,23 @@ export const get = query({
       .order("desc")
       .take(5);
 
+    // Get external IDs for this player
+    const externalIds = await ctx.db
+      .query("playerExternalIds")
+      .withIndex("by_player", (q) => q.eq("playerId", args.playerId))
+      .collect();
+
+    // Get provider aggregates for xG/xA data
+    const providerAggregates = await ctx.db
+      .query("providerPlayerAggregates")
+      .filter((q) => q.eq(q.field("playerId"), args.playerId))
+      .collect();
+
+    // Extract xG/xA from provider aggregates (prefer FotMob for xG data)
+    const fotmobAgg = providerAggregates.find((a) => a.provider === "fotmob" && a.window === "career");
+    const sofascoreAgg = providerAggregates.find((a) => a.provider === "sofascore" && a.window === "career");
+    const xGData = fotmobAgg?.additionalStats || sofascoreAgg?.additionalStats;
+
     return {
       _id: player._id,
       name: player.name,
@@ -282,6 +310,10 @@ export const get = query({
       positionGroup: player.positionGroup,
       position: player.position,
       photoUrl: player.photoUrl,
+      // Enriched profile fields
+      heightCm: player.heightCm,
+      weightKg: player.weightKg,
+      preferredFoot: player.preferredFoot,
       team: team
         ? {
             _id: team._id,
@@ -316,11 +348,27 @@ export const get = query({
             tier: rating.tier,
           }
         : null,
+      // xG/xA from enrichment providers
+      advancedStats: xGData
+        ? {
+            xG: xGData.xG,
+            xA: xGData.xA,
+            xGPer90: xGData.xGPer90,
+            xAPer90: xGData.xAPer90,
+            npxG: xGData.npxG,
+          }
+        : null,
       recentAppearances: appearances.map((app) => ({
         _id: app._id,
         matchDate: app.matchDate,
         minutes: app.minutes,
         stats: app.stats,
+      })),
+      // External provider IDs
+      externalIds: externalIds.map((ext) => ({
+        provider: ext.provider,
+        providerPlayerId: ext.providerPlayerId,
+        confidence: ext.confidence,
       })),
     };
   },

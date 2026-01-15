@@ -466,6 +466,87 @@ export const batchSetTier = internalMutation({
 // ============================================================================
 
 /**
+ * List all players with their ratings (if any)
+ * This is a public query for frontend use
+ */
+export const listPlayersWithRatings = query({
+  args: {
+    limit: v.optional(v.number()),
+    competitionId: v.optional(v.id("competitions")),
+    hasRatingOnly: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 100;
+
+    // Get all players
+    let players;
+    if (args.competitionId) {
+      players = await ctx.db
+        .query("players")
+        .withIndex("by_competition", (q) => q.eq("competitionId", args.competitionId!))
+        .collect();
+    } else {
+      players = await ctx.db.query("players").collect();
+    }
+
+    // Get all ratings
+    const ratings = await ctx.db.query("playerRatings").collect();
+    const ratingsByPlayer = new Map(ratings.map((r) => [r.playerId.toString(), r]));
+
+    // Get all rolling stats for minutes
+    const rollingStats = await ctx.db.query("playerRollingStats").collect();
+    const statsByPlayer = new Map(rollingStats.map((s) => [s.playerId.toString(), s]));
+
+    // Get teams and competitions for display
+    const teams = await ctx.db.query("teams").collect();
+    const teamsMap = new Map(teams.map((t) => [t._id.toString(), t]));
+    const competitions = await ctx.db.query("competitions").collect();
+    const competitionsMap = new Map(competitions.map((c) => [c._id.toString(), c]));
+
+    // Build player list
+    let result = players.map((p) => {
+      const rating = ratingsByPlayer.get(p._id.toString());
+      const stats = statsByPlayer.get(p._id.toString());
+      const team = teamsMap.get(p.teamId.toString());
+      const competition = competitionsMap.get(p.competitionId.toString());
+
+      return {
+        _id: p._id,
+        name: p.name,
+        position: p.position,
+        positionGroup: p.positionGroup,
+        team: team?.name ?? "Unknown",
+        competition: competition?.name ?? "Unknown",
+        photoUrl: p.photoUrl,
+        minutes: stats?.minutes ?? 0,
+        appearances: stats?.totals?.appearances ?? 0,
+        rating365: rating?.rating365 ?? null,
+        ratingLast5: rating?.ratingLast5 ?? null,
+        levelScore: rating?.levelScore ?? null,
+        hasRating: !!rating,
+      };
+    });
+
+    // Filter by hasRatingOnly if specified
+    if (args.hasRatingOnly) {
+      result = result.filter((p) => p.hasRating);
+    }
+
+    // Sort by rating (if exists) or minutes
+    result.sort((a, b) => {
+      if (a.rating365 !== null && b.rating365 !== null) {
+        return b.rating365 - a.rating365;
+      }
+      if (a.rating365 !== null) return -1;
+      if (b.rating365 !== null) return 1;
+      return b.minutes - a.minutes;
+    });
+
+    return result.slice(0, limit);
+  },
+});
+
+/**
  * List all competitions with their current settings
  */
 export const listCompetitions = query({
@@ -750,6 +831,9 @@ export const adminComputeRatings = internalAction({
     competitionId: v.optional(v.id("competitions")),
     country: v.optional(v.string()),
     dryRun: v.optional(v.boolean()),
+    // Custom date range (for testing with historical data)
+    customFromDate: v.optional(v.string()),
+    customToDate: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<RatingComputationResult> => {
     console.log("[Admin] Starting rating computation...");
@@ -760,11 +844,75 @@ export const adminComputeRatings = internalAction({
         competitionId: args.competitionId,
         country: args.country,
         dryRun: args.dryRun ?? false,
+        customFromDate: args.customFromDate,
+        customToDate: args.customToDate,
       }
     );
 
     console.log("[Admin] Rating computation result:", result);
     return result;
+  },
+});
+
+/**
+ * List players with ratings (internal version for CLI)
+ */
+export const internalListPlayersWithRatings = internalQuery({
+  args: {
+    limit: v.optional(v.number()),
+    hasRatingOnly: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 50;
+
+    // Get all players
+    const players = await ctx.db.query("players").collect();
+
+    // Get all ratings
+    const ratings = await ctx.db.query("playerRatings").collect();
+    const ratingsByPlayer = new Map(ratings.map((r) => [r.playerId.toString(), r]));
+
+    // Get all rolling stats for minutes
+    const rollingStats = await ctx.db.query("playerRollingStats").collect();
+    const statsByPlayer = new Map(rollingStats.map((s) => [s.playerId.toString(), s]));
+
+    // Get teams for display
+    const teams = await ctx.db.query("teams").collect();
+    const teamsMap = new Map(teams.map((t) => [t._id.toString(), t]));
+
+    // Build player list
+    let result = players.map((p) => {
+      const rating = ratingsByPlayer.get(p._id.toString());
+      const stats = statsByPlayer.get(p._id.toString());
+      const team = teamsMap.get(p.teamId.toString());
+
+      return {
+        name: p.name,
+        position: p.positionGroup,
+        team: team?.name ?? "Unknown",
+        minutes: stats?.minutes ?? 0,
+        appearances: stats?.totals?.appearances ?? 0,
+        rating365: rating?.rating365 ?? null,
+        levelScore: rating?.levelScore ?? null,
+      };
+    });
+
+    // Filter by hasRatingOnly if specified
+    if (args.hasRatingOnly) {
+      result = result.filter((p) => p.rating365 !== null);
+    }
+
+    // Sort by rating (if exists) or minutes
+    result.sort((a, b) => {
+      if (a.rating365 !== null && b.rating365 !== null) {
+        return b.rating365 - a.rating365;
+      }
+      if (a.rating365 !== null) return -1;
+      if (b.rating365 !== null) return 1;
+      return b.minutes - a.minutes;
+    });
+
+    return result.slice(0, limit);
   },
 });
 
@@ -801,6 +949,11 @@ export const debugAppearances = internalQuery({
       playerIds.has(id)
     );
 
+    // Get date range of appearances
+    const dates = appearances.map((a) => a.matchDate).sort();
+    const minDate = dates[0] ?? null;
+    const maxDate = dates[dates.length - 1] ?? null;
+
     return {
       totalAppearances: appearances.length,
       totalPlayers: players.length,
@@ -809,6 +962,7 @@ export const debugAppearances = internalQuery({
       playersWithEnoughMinutes: playersWithEnoughMinutes.length,
       topPlayersByMinutes: playerMinutesList.slice(0, 10),
       sampleAppearance: appearances[0] ?? null,
+      dateRange: { minDate, maxDate },
     };
   },
 });
@@ -919,5 +1073,340 @@ export const adminUpdateRatingProfile = internalMutation({
       invertMetrics: args.invertMetrics,
       updatedAt: Date.now(),
     });
+  },
+});
+
+// ============================================================================
+// Enrichment Management
+// ============================================================================
+
+import type { EnrichmentResult } from "./enrichment/enrichActions";
+
+/**
+ * Manually trigger FotMob enrichment
+ *
+ * @param maxRequests - Maximum API requests to make (default: 20)
+ * @param batchSize - Number of players to process (default: 10)
+ *
+ * Run from dashboard: internal.admin.adminEnrichFromFotMob
+ * Args: { "maxRequests": 20, "batchSize": 10 }
+ */
+export const adminEnrichFromFotMob = internalAction({
+  args: {
+    maxRequests: v.optional(v.number()),
+    batchSize: v.optional(v.number()),
+    competitionIds: v.optional(v.array(v.id("competitions"))),
+  },
+  handler: async (ctx, args): Promise<EnrichmentResult> => {
+    console.log(
+      `[Admin] Starting FotMob enrichment, maxRequests: ${args.maxRequests ?? 20}, batchSize: ${args.batchSize ?? 10}`
+    );
+
+    const result: EnrichmentResult = await ctx.runAction(
+      internal.enrichment.enrichActions.enrichPlayersFromFotMob,
+      {
+        maxRequests: args.maxRequests,
+        batchSize: args.batchSize,
+        competitionIds: args.competitionIds,
+      }
+    );
+
+    console.log("[Admin] FotMob enrichment result:", result);
+    return result;
+  },
+});
+
+/**
+ * Manually trigger SofaScore enrichment
+ *
+ * @param maxRequests - Maximum API requests to make (default: 15)
+ * @param batchSize - Number of players to process (default: 5)
+ *
+ * Run from dashboard: internal.admin.adminEnrichFromSofaScore
+ * Args: { "maxRequests": 15, "batchSize": 5 }
+ */
+export const adminEnrichFromSofaScore = internalAction({
+  args: {
+    maxRequests: v.optional(v.number()),
+    batchSize: v.optional(v.number()),
+    competitionIds: v.optional(v.array(v.id("competitions"))),
+  },
+  handler: async (ctx, args): Promise<EnrichmentResult> => {
+    console.log(
+      `[Admin] Starting SofaScore enrichment, maxRequests: ${args.maxRequests ?? 15}, batchSize: ${args.batchSize ?? 5}`
+    );
+
+    const result: EnrichmentResult = await ctx.runAction(
+      internal.enrichment.enrichActions.enrichPlayersFromSofaScore,
+      {
+        maxRequests: args.maxRequests,
+        batchSize: args.batchSize,
+        competitionIds: args.competitionIds,
+      }
+    );
+
+    console.log("[Admin] SofaScore enrichment result:", result);
+    return result;
+  },
+});
+
+/**
+ * Manually trigger enrichment from all providers
+ *
+ * Run from dashboard: internal.admin.adminEnrichFromAllProviders
+ * Args: { "fotMobRequests": 20, "sofaScoreRequests": 15 }
+ */
+export const adminEnrichFromAllProviders = internalAction({
+  args: {
+    fotMobRequests: v.optional(v.number()),
+    sofaScoreRequests: v.optional(v.number()),
+    batchSize: v.optional(v.number()),
+    competitionIds: v.optional(v.array(v.id("competitions"))),
+  },
+  handler: async (ctx, args): Promise<{
+    fotmob: EnrichmentResult;
+    sofascore: EnrichmentResult;
+    totalPlayersEnriched: number;
+  }> => {
+    console.log("[Admin] Starting combined enrichment from all providers");
+
+    const result = await ctx.runAction(
+      internal.enrichment.enrichActions.enrichPlayersFromAllProviders,
+      {
+        fotMobRequests: args.fotMobRequests,
+        sofaScoreRequests: args.sofaScoreRequests,
+        batchSize: args.batchSize,
+        competitionIds: args.competitionIds,
+      }
+    );
+
+    console.log("[Admin] Combined enrichment result:", result);
+    return result;
+  },
+});
+
+/**
+ * Get enrichment statistics
+ */
+export const getEnrichmentStats = query({
+  args: {},
+  handler: async (ctx) => {
+    const [
+      externalIds,
+      profiles,
+      aggregates,
+      unresolved,
+      conflicts,
+      enrichmentStates,
+    ] = await Promise.all([
+      ctx.db.query("playerExternalIds").collect(),
+      ctx.db.query("providerPlayerProfiles").collect(),
+      ctx.db.query("providerPlayerAggregates").collect(),
+      ctx.db.query("unresolvedExternalPlayers").collect(),
+      ctx.db.query("playerFieldConflicts").collect(),
+      ctx.db.query("enrichmentState").collect(),
+    ]);
+
+    // Group by provider
+    const externalIdsByProvider: Record<string, number> = {};
+    for (const ext of externalIds) {
+      externalIdsByProvider[ext.provider] = (externalIdsByProvider[ext.provider] || 0) + 1;
+    }
+
+    const profilesByProvider: Record<string, number> = {};
+    for (const profile of profiles) {
+      profilesByProvider[profile.provider] = (profilesByProvider[profile.provider] || 0) + 1;
+    }
+
+    const unresolvedByStatus: Record<string, number> = {};
+    for (const u of unresolved) {
+      unresolvedByStatus[u.status] = (unresolvedByStatus[u.status] || 0) + 1;
+    }
+
+    const unresolvedConflicts = conflicts.filter((c) => !c.resolved);
+
+    return {
+      totalExternalIds: externalIds.length,
+      externalIdsByProvider,
+      totalProfiles: profiles.length,
+      profilesByProvider,
+      totalAggregates: aggregates.length,
+      totalUnresolved: unresolved.length,
+      unresolvedByStatus,
+      totalConflicts: conflicts.length,
+      unresolvedConflicts: unresolvedConflicts.length,
+      enrichmentStates: enrichmentStates.map((s) => ({
+        provider: s.provider,
+        totalProcessed: s.totalProcessed,
+        updatedAt: s.updatedAt ? new Date(s.updatedAt).toISOString() : null,
+      })),
+    };
+  },
+});
+
+/**
+ * List unresolved external players (review queue)
+ */
+export const listUnresolvedPlayers = query({
+  args: {
+    limit: v.optional(v.number()),
+    status: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 50;
+
+    let query = ctx.db.query("unresolvedExternalPlayers");
+
+    if (args.status) {
+      query = query.filter((q) => q.eq(q.field("status"), args.status));
+    }
+
+    const unresolved = await query.take(limit);
+
+    return unresolved.map((u) => ({
+      _id: u._id,
+      provider: u.provider,
+      providerPlayerId: u.providerPlayerId,
+      reason: u.reason,
+      status: u.status,
+      candidateCount: u.candidatePlayerIds?.length ?? 0,
+      createdAt: new Date(u.createdAt).toISOString(),
+    }));
+  },
+});
+
+/**
+ * List field conflicts
+ */
+export const listFieldConflicts = query({
+  args: {
+    unresolvedOnly: v.optional(v.boolean()),
+    playerId: v.optional(v.id("players")),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 50;
+
+    let conflicts = await ctx.db.query("playerFieldConflicts").collect();
+
+    if (args.unresolvedOnly) {
+      conflicts = conflicts.filter((c) => !c.resolved);
+    }
+
+    if (args.playerId) {
+      conflicts = conflicts.filter((c) => c.playerId === args.playerId);
+    }
+
+    return conflicts.slice(0, limit).map((c) => ({
+      _id: c._id,
+      playerId: c.playerId,
+      field: c.field,
+      canonicalValue: c.canonicalValue,
+      providerValue: c.providerValue,
+      provider: c.provider,
+      resolved: c.resolved,
+      resolvedValue: c.resolvedValue,
+    }));
+  },
+});
+
+/**
+ * Resolve an unresolved external player manually
+ */
+export const resolveExternalPlayer = internalMutation({
+  args: {
+    unresolvedId: v.id("unresolvedExternalPlayers"),
+    playerId: v.id("players"),
+  },
+  handler: async (ctx, args) => {
+    const unresolved = await ctx.db.get(args.unresolvedId);
+    if (!unresolved) {
+      throw new Error(`Unresolved player not found: ${args.unresolvedId}`);
+    }
+
+    const player = await ctx.db.get(args.playerId);
+    if (!player) {
+      throw new Error(`Player not found: ${args.playerId}`);
+    }
+
+    const now = Date.now();
+
+    // Create external ID mapping
+    await ctx.db.insert("playerExternalIds", {
+      playerId: args.playerId,
+      provider: unresolved.provider,
+      providerPlayerId: unresolved.providerPlayerId,
+      confidence: 1.0, // Manual resolution = 100% confidence
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // Mark as resolved
+    await ctx.db.patch(args.unresolvedId, {
+      status: "resolved",
+      resolvedPlayerId: args.playerId,
+      updatedAt: now,
+    });
+
+    console.log(
+      `[Admin] Resolved external player ${unresolved.providerPlayerId} -> ${player.name}`
+    );
+
+    return { success: true };
+  },
+});
+
+/**
+ * Reject an unresolved external player (not a real match)
+ */
+export const rejectExternalPlayer = internalMutation({
+  args: {
+    unresolvedId: v.id("unresolvedExternalPlayers"),
+  },
+  handler: async (ctx, args) => {
+    const unresolved = await ctx.db.get(args.unresolvedId);
+    if (!unresolved) {
+      throw new Error(`Unresolved player not found: ${args.unresolvedId}`);
+    }
+
+    await ctx.db.patch(args.unresolvedId, {
+      status: "rejected",
+      updatedAt: Date.now(),
+    });
+
+    console.log(`[Admin] Rejected external player ${unresolved.providerPlayerId}`);
+
+    return { success: true };
+  },
+});
+
+/**
+ * Update normalized names for all players (one-time migration)
+ */
+export const updateNormalizedNames = internalMutation({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 500;
+
+    // Import normalize function
+    const { normalizeName } = await import("./resolve/resolvePlayer");
+
+    const players = await ctx.db
+      .query("players")
+      .filter((q) => q.eq(q.field("nameNormalized"), undefined))
+      .take(limit);
+
+    let updated = 0;
+    for (const player of players) {
+      const normalized = normalizeName(player.name);
+      await ctx.db.patch(player._id, { nameNormalized: normalized });
+      updated++;
+    }
+
+    console.log(`[Admin] Updated normalized names for ${updated} players`);
+
+    return { updated, remaining: players.length === limit };
   },
 });
