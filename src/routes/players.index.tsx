@@ -53,7 +53,7 @@ function PlayersPage() {
     competitionId: searchParams.competitionId || "",
     tier: searchParams.tier || "",
     positionGroup: searchParams.positionGroup || "",
-    minMinutes: searchParams.minMinutes ?? 300,
+    minMinutes: searchParams.minMinutes ?? 90,
     window: searchParams.window || "365",
   };
 

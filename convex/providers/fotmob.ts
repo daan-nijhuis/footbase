@@ -35,15 +35,23 @@ export const FOTMOB_LEAGUE_IDS = {
 // API Response Types
 // ============================================================================
 
-export interface FotMobSearchResult {
-  squad: Array<{
-    id: number;
+// The search API returns an array of sections
+export interface FotMobSearchSection {
+  title: {
+    key: string;
+    value: string;
+  };
+  suggestions: Array<{
+    type: string; // "player", "team", "league", etc.
+    id: string;
     name: string;
-    teamId: number;
-    teamName: string;
+    teamId?: number;
+    teamName?: string;
+    isCoach?: boolean;
   }>;
-  // Other result types like teams, leagues
 }
+
+export type FotMobSearchResult = FotMobSearchSection[];
 
 export interface FotMobPlayerProfile {
   id: number;
@@ -257,37 +265,65 @@ function mapPositionToGroup(
   return undefined;
 }
 
+/**
+ * FotMob-specific headers to avoid being blocked
+ */
+const FOTMOB_HEADERS = {
+  "Origin": "https://www.fotmob.com",
+  "Referer": "https://www.fotmob.com/",
+};
+
 // ============================================================================
 // API Functions
 // ============================================================================
 
 /**
  * Search for players by name
+ * Note: FotMob's search API returns an array of sections with suggestions
  */
 export async function searchPlayer(
   query: string,
   budget?: RequestBudget
 ): Promise<FotMobPlayerSearchResult[]> {
-  const url = `${FOTMOB_BASE_URL}/searchapi/?term=${encodeURIComponent(query)}`;
+  // FotMob search endpoint
+  const url = `${FOTMOB_BASE_URL}/search/suggest?term=${encodeURIComponent(query)}&lang=en`;
 
   try {
     const result = await rateLimitedFetch<FotMobSearchResult>(
       "fotmob",
       url,
       RATE_LIMITS.fotmob,
-      budget
+      budget,
+      { headers: FOTMOB_HEADERS }
     );
 
-    if (!result.data.squad || !Array.isArray(result.data.squad)) {
+    // The response is an array of sections
+    if (!Array.isArray(result.data)) {
       return [];
     }
 
-    return result.data.squad.map((player) => ({
-      providerPlayerId: player.id.toString(),
-      name: player.name,
-      teamId: player.teamId?.toString(),
-      teamName: player.teamName,
-    }));
+    // Collect all player suggestions from all sections (avoid duplicates)
+    const players: FotMobPlayerSearchResult[] = [];
+    const seenIds = new Set<string>();
+
+    for (const section of result.data) {
+      if (!section.suggestions) continue;
+
+      for (const suggestion of section.suggestions) {
+        // Only include players (not coaches, teams, etc.)
+        if (suggestion.type === "player" && !suggestion.isCoach && !seenIds.has(suggestion.id)) {
+          seenIds.add(suggestion.id);
+          players.push({
+            providerPlayerId: suggestion.id,
+            name: suggestion.name,
+            teamId: suggestion.teamId?.toString(),
+            teamName: suggestion.teamName,
+          });
+        }
+      }
+    }
+
+    return players;
   } catch (error) {
     if (error instanceof ProviderApiError) {
       throw new FotMobError(error.message, error.statusCode);
@@ -313,7 +349,8 @@ export async function getPlayer(
       "fotmob",
       url,
       RATE_LIMITS.fotmob,
-      budget
+      budget,
+      { headers: FOTMOB_HEADERS }
     );
 
     const profile = result.data;
@@ -448,7 +485,7 @@ export async function getLeague(
         country: string;
         selectedSeason: string;
       };
-    }>("fotmob", url, RATE_LIMITS.fotmob, budget);
+    }>("fotmob", url, RATE_LIMITS.fotmob, budget, { headers: FOTMOB_HEADERS });
 
     return {
       id: result.data.details.id.toString(),
@@ -488,7 +525,7 @@ export async function getTeam(
       history?: {
         leagueId?: number;
       };
-    }>("fotmob", url, RATE_LIMITS.fotmob, budget);
+    }>("fotmob", url, RATE_LIMITS.fotmob, budget, { headers: FOTMOB_HEADERS });
 
     return {
       id: result.data.details.id.toString(),

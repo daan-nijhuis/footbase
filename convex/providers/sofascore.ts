@@ -249,6 +249,14 @@ function timestampToDateString(timestamp?: number): string | undefined {
   return new Date(timestamp * 1000).toISOString().split("T")[0];
 }
 
+/**
+ * SofaScore-specific headers to avoid being blocked
+ */
+const SOFASCORE_HEADERS = {
+  "Origin": "https://www.sofascore.com",
+  "Referer": "https://www.sofascore.com/",
+};
+
 // ============================================================================
 // API Functions
 // ============================================================================
@@ -267,7 +275,8 @@ export async function searchPlayer(
       "sofascore",
       url,
       RATE_LIMITS.sofascore,
-      budget
+      budget,
+      { headers: SOFASCORE_HEADERS }
     );
 
     if (!result.data.players || !Array.isArray(result.data.players)) {
@@ -306,7 +315,8 @@ export async function getPlayer(
       "sofascore",
       url,
       RATE_LIMITS.sofascore,
-      budget
+      budget,
+      { headers: SOFASCORE_HEADERS }
     );
 
     const profile = result.data.player;
@@ -362,7 +372,8 @@ export async function getPlayerStats(
       "sofascore",
       url,
       RATE_LIMITS.sofascore,
-      budget
+      budget,
+      { headers: SOFASCORE_HEADERS }
     );
 
     const seasonStats: SofaScoreNormalizedStats[] = [];
@@ -490,7 +501,7 @@ export async function getTournament(
           flag?: string;
         };
       };
-    }>("sofascore", url, RATE_LIMITS.sofascore, budget);
+    }>("sofascore", url, RATE_LIMITS.sofascore, budget, { headers: SOFASCORE_HEADERS });
 
     return {
       id: result.data.uniqueTournament.id.toString(),
@@ -527,7 +538,7 @@ export async function getTeam(
           name: string;
         };
       };
-    }>("sofascore", url, RATE_LIMITS.sofascore, budget);
+    }>("sofascore", url, RATE_LIMITS.sofascore, budget, { headers: SOFASCORE_HEADERS });
 
     return {
       id: result.data.team.id.toString(),
@@ -555,7 +566,7 @@ export async function getMatchPlayerStats(
     const result = await rateLimitedFetch<{
       home?: { players?: SofaScoreMatchRating[] };
       away?: { players?: SofaScoreMatchRating[] };
-    }>("sofascore", url, RATE_LIMITS.sofascore, budget);
+    }>("sofascore", url, RATE_LIMITS.sofascore, budget, { headers: SOFASCORE_HEADERS });
 
     const players: SofaScoreMatchRating[] = [];
 

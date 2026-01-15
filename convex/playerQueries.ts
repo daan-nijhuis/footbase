@@ -34,7 +34,7 @@ export const list = query({
     pageSize: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const minMinutes = args.minMinutes ?? 300;
+    const minMinutes = args.minMinutes ?? 90;
     const window = args.window ?? "365";
     const sort = args.sort ?? "rating";
     const sortDesc = args.sortDesc ?? true;
