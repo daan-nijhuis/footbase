@@ -9,6 +9,7 @@
  */
 
 import type * as admin from "../admin.js";
+import type * as admin_seedTestData from "../admin/seedTestData.js";
 import type * as competitionQueries from "../competitionQueries.js";
 import type * as crons from "../crons.js";
 import type * as enrichment_enrichActions from "../enrichment/enrichActions.js";
@@ -39,6 +40,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   admin: typeof admin;
+  "admin/seedTestData": typeof admin_seedTestData;
   competitionQueries: typeof competitionQueries;
   crons: typeof crons;
   "enrichment/enrichActions": typeof enrichment_enrichActions;

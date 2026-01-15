@@ -132,19 +132,16 @@ export const testSofaScore = internalAction({
 });
 
 /**
- * Debug FotMob API response to see actual structure
+ * Debug FotMob player profile API response
  */
-export const debugFotMobApi = internalAction({
+export const debugFotMobPlayerApi = internalAction({
   args: {
-    playerName: v.optional(v.string()),
+    playerId: v.string(),
   },
   handler: async (ctx, args) => {
-    const playerName = args.playerName ?? "Memphis Depay";
+    const url = `https://www.fotmob.com/api/playerData?id=${args.playerId}`;
 
-    // Try the search endpoint directly
-    const url = `https://www.fotmob.com/api/search/suggest?term=${encodeURIComponent(playerName)}&lang=en`;
-
-    console.log(`[Debug] Fetching FotMob search: ${url}`);
+    console.log(`[Debug] Fetching FotMob player: ${url}`);
 
     try {
       const response = await fetch(url, {
@@ -160,15 +157,128 @@ export const debugFotMobApi = internalAction({
       console.log(`[Debug] Response status: ${response.status}`);
 
       const text = await response.text();
-      console.log(`[Debug] Response body (first 2000 chars): ${text.substring(0, 2000)}`);
+      console.log(`[Debug] Response body (first 3000 chars): ${text.substring(0, 3000)}`);
 
-      // Try to parse as JSON
       try {
         const data = JSON.parse(text);
         return {
           success: true,
           status: response.status,
           dataKeys: Object.keys(data),
+          data,
+        };
+      } catch {
+        return {
+          success: false,
+          status: response.status,
+          error: "Failed to parse JSON",
+          body: text.substring(0, 500),
+        };
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  },
+});
+
+/**
+ * Debug API-Football status
+ */
+export const debugApiFootball = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    const apiKey = process.env.API_FOOTBALL_KEY;
+    const mode = process.env.API_FOOTBALL_MODE;
+    const host = process.env.API_FOOTBALL_HOST;
+
+    console.log(`[Debug] API_FOOTBALL_KEY: ${apiKey ? apiKey.slice(0, 5) + "..." : "NOT SET"}`);
+    console.log(`[Debug] API_FOOTBALL_MODE: ${mode || "NOT SET"}`);
+    console.log(`[Debug] API_FOOTBALL_HOST: ${host || "NOT SET"}`);
+
+    if (!apiKey) {
+      return { success: false, error: "API_FOOTBALL_KEY not set" };
+    }
+
+    // Try a simple status request
+    const baseUrl = host?.startsWith("http") ? host : `https://${host || "v3.football.api-sports.io"}`;
+    const url = `${baseUrl}/status`;
+
+    console.log(`[Debug] Testing URL: ${url}`);
+
+    try {
+      const response = await fetch(url, {
+        headers: {
+          "x-apisports-key": apiKey,
+          "Accept": "application/json",
+        },
+      });
+
+      console.log(`[Debug] Response status: ${response.status}`);
+
+      const text = await response.text();
+      console.log(`[Debug] Response body: ${text.substring(0, 500)}`);
+
+      try {
+        const data = JSON.parse(text);
+        return {
+          success: true,
+          status: response.status,
+          data,
+        };
+      } catch {
+        return {
+          success: false,
+          status: response.status,
+          error: "Failed to parse JSON",
+          body: text.substring(0, 500),
+        };
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  },
+});
+
+/**
+ * Debug SofaScore API response
+ */
+export const debugSofaScoreApi = internalAction({
+  args: {
+    playerName: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const playerName = args.playerName ?? "Virgil van Dijk";
+    const url = `https://api.sofascore.com/api/v1/search/players?q=${encodeURIComponent(playerName)}`;
+
+    console.log(`[Debug] Fetching SofaScore search: ${url}`);
+
+    try {
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Accept": "application/json, text/plain, */*",
+          "Accept-Language": "en-US,en;q=0.9",
+          "Origin": "https://www.sofascore.com",
+          "Referer": "https://www.sofascore.com/",
+        },
+      });
+
+      console.log(`[Debug] Response status: ${response.status}`);
+
+      const text = await response.text();
+      console.log(`[Debug] Response body (first 2000 chars): ${text.substring(0, 2000)}`);
+
+      try {
+        const data = JSON.parse(text);
+        return {
+          success: true,
+          status: response.status,
           data,
         };
       } catch {

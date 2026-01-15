@@ -53,16 +53,43 @@ export interface FotMobSearchSection {
 
 export type FotMobSearchResult = FotMobSearchSection[];
 
+// Player information item in the playerInformation array
+export interface FotMobPlayerInfoItem {
+  title: string;
+  translationKey?: string;
+  value: {
+    numberValue?: number;
+    key?: string | null;
+    fallback?: string | number | { utcTime: string };
+  };
+  countryCode?: string;
+}
+
+// Career history entry
+export interface FotMobCareerEntry {
+  seasonName: string;
+  team: string;
+  teamId: number;
+  appearances?: string;
+  goals?: string;
+  assists?: string;
+  rating?: { rating?: string };
+  tournamentStats?: Array<{
+    leagueId: number;
+    leagueName: string;
+    seasonName: string;
+    appearances?: string;
+    goals?: string;
+    assists?: string;
+    rating?: { rating?: string };
+  }>;
+}
+
 export interface FotMobPlayerProfile {
   id: number;
   name: string;
   birthDate: {
     utcTime: string;
-    age?: string;
-  };
-  nationality?: {
-    country: string;
-    countryCode: string;
   };
   primaryTeam?: {
     teamId: number;
@@ -73,20 +100,24 @@ export interface FotMobPlayerProfile {
       label: string;
     };
   };
-  height?: string; // e.g., "185 cm"
-  weight?: string; // e.g., "78 kg"
-  preferredFoot?: string; // "Right", "Left", "Both"
+  // Player information is now in an array
+  playerInformation?: FotMobPlayerInfoItem[];
   mainLeague?: {
     leagueId: number;
     leagueName: string;
+    stats?: Array<{
+      title: string;
+      localizedTitleId?: string;
+      value: number;
+    }>;
   };
-  // Stats summary
-  statSeasons?: Array<{
-    seasonName: string;
-    leagueId: number;
-    leagueName: string;
-    stats?: FotMobPlayerSeasonStats;
-  }>;
+  // Career history
+  careerHistory?: {
+    careerItems?: {
+      senior?: { seasonEntries?: FotMobCareerEntry[] };
+      "national team"?: { seasonEntries?: FotMobCareerEntry[] };
+    };
+  };
 }
 
 export interface FotMobPlayerSeasonStats {
@@ -333,6 +364,21 @@ export async function searchPlayer(
 }
 
 /**
+ * Extract a value from playerInformation array by title
+ */
+function getPlayerInfoValue(
+  info: FotMobPlayerInfoItem[] | undefined,
+  title: string
+): FotMobPlayerInfoItem | undefined {
+  if (!info) return undefined;
+  return info.find(
+    (item) =>
+      item.title.toLowerCase() === title.toLowerCase() ||
+      item.translationKey?.toLowerCase().includes(title.toLowerCase())
+  );
+}
+
+/**
  * Get full player profile
  */
 export async function getPlayer(
@@ -354,16 +400,41 @@ export async function getPlayer(
     );
 
     const profile = result.data;
+    const playerInfo = profile.playerInformation;
+
+    // Extract data from playerInformation array
+    const heightInfo = getPlayerInfoValue(playerInfo, "height");
+    const countryInfo = getPlayerInfoValue(playerInfo, "country");
+    const footInfo = getPlayerInfoValue(playerInfo, "preferred foot");
+
+    // Parse height from numberValue or fallback string
+    let heightCm: number | undefined;
+    if (heightInfo?.value.numberValue) {
+      heightCm = heightInfo.value.numberValue;
+    } else if (typeof heightInfo?.value.fallback === "string") {
+      heightCm = parseHeight(heightInfo.value.fallback);
+    }
+
+    // Get nationality from countryInfo
+    const nationality =
+      typeof countryInfo?.value.fallback === "string"
+        ? countryInfo.value.fallback
+        : undefined;
+
+    // Get preferred foot
+    const preferredFootStr =
+      footInfo?.value.key ||
+      (typeof footInfo?.value.fallback === "string" ? footInfo.value.fallback : undefined);
 
     // Normalize the profile
     const normalized: FotMobNormalizedProfile = {
       providerPlayerId,
       name: profile.name,
       birthDate: profile.birthDate?.utcTime?.split("T")[0],
-      nationality: profile.nationality?.country,
-      heightCm: parseHeight(profile.height),
-      weightKg: parseWeight(profile.weight),
-      preferredFoot: normalizePreferredFoot(profile.preferredFoot),
+      nationality,
+      heightCm,
+      weightKg: undefined, // FotMob doesn't seem to provide weight in the new API
+      preferredFoot: normalizePreferredFoot(preferredFootStr),
       position: profile.positionDescription?.primaryPosition?.label,
       positionGroup: mapPositionToGroup(
         profile.positionDescription?.primaryPosition?.label
@@ -398,39 +469,70 @@ export async function getPlayerStats(
   seasonStats: FotMobNormalizedStats[];
   careerStats?: FotMobNormalizedStats;
 }> {
-  // Get player profile which includes season stats
+  // Get player profile which includes career history
   const { raw: profile } = await getPlayer(providerPlayerId, budget);
 
   const seasonStats: FotMobNormalizedStats[] = [];
 
-  if (profile.statSeasons) {
-    for (const season of profile.statSeasons) {
-      // Filter by season/league if specified
-      if (options.season && !season.seasonName.includes(options.season)) {
-        continue;
-      }
-      if (options.leagueId && season.leagueId.toString() !== options.leagueId) {
-        continue;
-      }
+  // Extract stats from mainLeague (current season)
+  if (profile.mainLeague?.stats) {
+    const stats = profile.mainLeague.stats;
+    const getStatValue = (id: string): number | undefined => {
+      const stat = stats.find((s) => s.localizedTitleId === id || s.title.toLowerCase() === id.toLowerCase());
+      return stat?.value;
+    };
 
-      if (season.stats) {
+    // Check season/league filters
+    const seasonMatches = !options.season || profile.mainLeague.leagueName?.includes(options.season);
+    const leagueMatches = !options.leagueId || profile.mainLeague.leagueId.toString() === options.leagueId;
+
+    if (seasonMatches && leagueMatches) {
+      seasonStats.push({
+        season: "current",
+        leagueId: profile.mainLeague.leagueId?.toString(),
+        appearances: getStatValue("matches_uppercase") || getStatValue("matches"),
+        minutes: getStatValue("minutes_played"),
+        goals: getStatValue("goals"),
+        assists: getStatValue("assists"),
+        rating: getStatValue("rating"),
+      });
+    }
+  }
+
+  // Extract stats from career history (senior career)
+  const seniorEntries = profile.careerHistory?.careerItems?.senior?.seasonEntries || [];
+  for (const entry of seniorEntries) {
+    // Filter by season if specified
+    if (options.season && !entry.seasonName.includes(options.season)) {
+      continue;
+    }
+
+    // Process each tournament in the season
+    if (entry.tournamentStats) {
+      for (const tournament of entry.tournamentStats) {
+        // Filter by league if specified
+        if (options.leagueId && tournament.leagueId.toString() !== options.leagueId) {
+          continue;
+        }
+
         seasonStats.push({
-          season: season.seasonName,
-          leagueId: season.leagueId?.toString(),
-          appearances: season.stats.appearances,
-          minutes: season.stats.minutes,
-          goals: season.stats.goals,
-          assists: season.stats.assists,
-          xG: season.stats.expectedGoals,
-          xA: season.stats.expectedAssists,
-          npxG: season.stats.expectedGoalsNonPenalty,
-          xGPer90: season.stats.expectedGoalsPer90,
-          xAPer90: season.stats.expectedAssistsPer90,
-          goalsPer90: season.stats.goalsPer90,
-          assistsPer90: season.stats.assistsPer90,
-          rating: season.stats.rating,
+          season: entry.seasonName,
+          leagueId: tournament.leagueId?.toString(),
+          appearances: tournament.appearances ? parseInt(tournament.appearances, 10) : undefined,
+          goals: tournament.goals ? parseInt(tournament.goals, 10) : undefined,
+          assists: tournament.assists ? parseInt(tournament.assists, 10) : undefined,
+          rating: tournament.rating?.rating ? parseFloat(tournament.rating.rating) : undefined,
         });
       }
+    } else {
+      // No tournament breakdown, use season totals
+      seasonStats.push({
+        season: entry.seasonName,
+        appearances: entry.appearances ? parseInt(entry.appearances, 10) : undefined,
+        goals: entry.goals ? parseInt(entry.goals, 10) : undefined,
+        assists: entry.assists ? parseInt(entry.assists, 10) : undefined,
+        rating: entry.rating?.rating ? parseFloat(entry.rating.rating) : undefined,
+      });
     }
   }
 
@@ -442,18 +544,21 @@ export async function getPlayerStats(
       minutes: seasonStats.reduce((sum, s) => sum + (s.minutes || 0), 0),
       goals: seasonStats.reduce((sum, s) => sum + (s.goals || 0), 0),
       assists: seasonStats.reduce((sum, s) => sum + (s.assists || 0), 0),
-      xG: seasonStats.reduce((sum, s) => sum + (s.xG || 0), 0),
-      xA: seasonStats.reduce((sum, s) => sum + (s.xA || 0), 0),
-      npxG: seasonStats.reduce((sum, s) => sum + (s.npxG || 0), 0),
     };
 
-    // Calculate per90 for career
+    // Calculate per90 for career if we have minutes
     if (careerStats.minutes && careerStats.minutes > 0) {
       const per90Factor = 90 / careerStats.minutes;
       careerStats.goalsPer90 = (careerStats.goals || 0) * per90Factor;
       careerStats.assistsPer90 = (careerStats.assists || 0) * per90Factor;
-      careerStats.xGPer90 = (careerStats.xG || 0) * per90Factor;
-      careerStats.xAPer90 = (careerStats.xA || 0) * per90Factor;
+    }
+
+    // Calculate average rating from seasons that have ratings
+    const ratingsWithValues = seasonStats.filter((s) => s.rating !== undefined);
+    if (ratingsWithValues.length > 0) {
+      careerStats.rating =
+        ratingsWithValues.reduce((sum, s) => sum + (s.rating || 0), 0) /
+        ratingsWithValues.length;
     }
   }
 

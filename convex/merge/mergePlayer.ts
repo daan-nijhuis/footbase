@@ -279,11 +279,24 @@ export async function mergeProviderProfile(
     await db.patch(playerId, updates);
   }
 
+  // Sanitize normalized profile to only include schema-valid fields
+  const sanitizedProfile: NormalizedProfile = {
+    name: profile.name,
+    birthDate: profile.birthDate,
+    nationality: profile.nationality,
+    heightCm: profile.heightCm,
+    weightKg: profile.weightKg,
+    preferredFoot: profile.preferredFoot,
+    photoUrl: profile.photoUrl,
+    position: profile.position,
+    positionGroup: profile.positionGroup,
+  };
+
   // Store/update provider profile
   if (existingProfile) {
     await db.patch(existingProfile._id, {
       profile: rawProfile,
-      normalized: profile,
+      normalized: sanitizedProfile,
       fetchedAt: now,
     });
   } else {
@@ -291,7 +304,7 @@ export async function mergeProviderProfile(
       playerId,
       provider,
       profile: rawProfile,
-      normalized: profile,
+      normalized: sanitizedProfile,
       fetchedAt: now,
     });
   }

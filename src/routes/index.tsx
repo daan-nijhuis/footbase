@@ -85,10 +85,7 @@ function HomePage() {
 
         {/* Footer */}
         <div className="mt-16 text-center text-sm text-muted-foreground">
-          <p>MVP Version - Geen authenticatie vereist</p>
-          <p className="mt-2">
-            Competition Tiers: Platinum, Diamond/Elite, Goud, Zilver, Brons
-          </p>
+          <p>Version 0.1</p>
         </div>
       </div>
     </div>
