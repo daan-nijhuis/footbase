@@ -24,6 +24,7 @@ import {
   type CanonicalPlayer,
   type CanonicalAppearance,
 } from "../providers/apiFootball";
+import { getCurrentFootballSeason } from "../lib/metrics";
 
 // ============================================================================
 // Types
@@ -510,7 +511,7 @@ export const ingestCountries = internalAction({
     maxRequests: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const season = args.season || new Date().getFullYear().toString();
+    const season = args.season || getCurrentFootballSeason();
     const maxRequests = args.maxRequests || 50; // Conservative default for free plan
 
     // Start ingestion run

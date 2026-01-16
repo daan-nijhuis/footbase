@@ -21,6 +21,7 @@ import {
   fetchTeamsByLeague,
   fetchPlayersByLeague,
 } from "./providers/apiFootball";
+import { getCurrentFootballSeason } from "./lib/metrics";
 
 // ============================================================================
 // Manual Ingestion Triggers
@@ -42,7 +43,7 @@ export const adminRunIngestionNow = internalAction({
   },
   handler: async (ctx, args): Promise<IngestionResult> => {
     const countries = args.countries || ["Netherlands", "Germany"];
-    const season = args.season || new Date().getFullYear().toString();
+    const season = args.season || getCurrentFootballSeason();
     const maxRequests = args.maxRequests || 50;
 
     console.log(

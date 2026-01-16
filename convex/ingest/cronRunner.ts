@@ -15,6 +15,7 @@ import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { IngestionResult } from "./apiFootballIngest";
 import type { EnrichmentResult } from "../enrichment/enrichActions";
+import { getCurrentFootballSeason } from "../lib/metrics";
 
 // Re-export for use in admin.ts
 export type { IngestionResult };
@@ -25,6 +26,7 @@ export type { IngestionResult };
 function formatDate(date: Date): string {
   return date.toISOString().split("T")[0];
 }
+
 
 /**
  * Run the daily ingestion for NL + DE
@@ -60,8 +62,10 @@ export const runDailyIngestion = internalAction({
   handler: async (ctx): Promise<DailyIngestionResult> => {
     console.log("[Cron] Starting daily ingestion...");
 
-    const season = new Date().getFullYear().toString();
+    const season = getCurrentFootballSeason();
     const countries = ["Netherlands", "Germany"];
+
+    console.log(`[Cron] Using season: ${season}`);
 
     // Step 1: Ingest competitions, teams, and players
     // Budget: ~50 requests

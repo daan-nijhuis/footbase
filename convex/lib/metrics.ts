@@ -338,3 +338,29 @@ export const MIN_MINUTES_FOR_RATING = 90;
 export const ROLLING_WINDOW_DAYS = 365;
 export const FORM_WINDOW_MATCHES = 5;
 export const TOP_N_FOR_COMPETITION_STRENGTH = 25;
+
+// ============================================================================
+// Season Helpers
+// ============================================================================
+
+/**
+ * Get current football season for API-Football
+ *
+ * European football seasons run from August to May.
+ * API-Football uses the starting year of the season.
+ *
+ * Examples:
+ * - January 2026 -> season "2025" (2025-2026 season)
+ * - August 2025 -> season "2025" (2025-2026 season just started)
+ * - July 2025 -> season "2024" (2024-2025 season still running)
+ */
+export function getCurrentFootballSeason(date: Date = new Date()): string {
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1; // 1-12
+
+  // If January-July, we're in the second half of the previous season
+  // If August-December, we're in the first half of the current season
+  const seasonYear = month >= 8 ? year : year - 1;
+
+  return seasonYear.toString();
+}

@@ -13,6 +13,7 @@ import {
   ApiFootballError,
   type RateLimitInfo,
 } from "./apiFootballClient";
+import { getCurrentFootballSeason } from "../lib/metrics";
 
 // ============================================================================
 // API Response Types
@@ -381,7 +382,7 @@ export async function fetchLeaguesByCountry(
     const currentSeason = item.seasons.find((s) => s.current);
     const season = currentSeason?.year.toString() ||
       item.seasons[item.seasons.length - 1]?.year.toString() ||
-      new Date().getFullYear().toString();
+      getCurrentFootballSeason();
 
     return {
       providerLeagueId: item.league.id.toString(),
