@@ -6,6 +6,8 @@ dist-ssr
 count.txt
 .env
 .env.local
+.env.vercel
+.env.vercel.prod
 .nitro
 .tanstack
 .wrangler
