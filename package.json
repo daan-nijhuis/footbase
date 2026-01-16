@@ -8,7 +8,8 @@
     "dev:all": "concurrently \"pnpm dev\" \"pnpm dev:convex\"",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "export-context": "npx tsx scripts/export-context.ts"
   },
   "dependencies": {
     "@convex-dev/react-query": "^0.1.0",
@@ -55,6 +56,7 @@
     "concurrently": "^9.2.1",
     "jsdom": "^27.0.0",
     "tailwindcss": "^4.1.18",
+    "tsx": "^4.21.0",
     "typescript": "^5.7.2",
     "vite": "^7.1.7",
     "vitest": "^3.0.5",

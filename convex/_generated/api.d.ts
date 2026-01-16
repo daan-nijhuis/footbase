@@ -10,6 +10,11 @@
 
 import type * as admin from "../admin.js";
 import type * as admin_seedTestData from "../admin/seedTestData.js";
+import type * as ai_aiCronRunner from "../ai/aiCronRunner.js";
+import type * as ai_batchApi from "../ai/batchApi.js";
+import type * as ai_buildPlayerAiInput from "../ai/buildPlayerAiInput.js";
+import type * as ai_generatePlayerReport from "../ai/generatePlayerReport.js";
+import type * as ai_playerAiQueries from "../ai/playerAiQueries.js";
 import type * as competitionQueries from "../competitionQueries.js";
 import type * as crons from "../crons.js";
 import type * as enrichment_enrichActions from "../enrichment/enrichActions.js";
@@ -41,6 +46,11 @@ import type {
 declare const fullApi: ApiFromModules<{
   admin: typeof admin;
   "admin/seedTestData": typeof admin_seedTestData;
+  "ai/aiCronRunner": typeof ai_aiCronRunner;
+  "ai/batchApi": typeof ai_batchApi;
+  "ai/buildPlayerAiInput": typeof ai_buildPlayerAiInput;
+  "ai/generatePlayerReport": typeof ai_generatePlayerReport;
+  "ai/playerAiQueries": typeof ai_playerAiQueries;
   competitionQueries: typeof competitionQueries;
   crons: typeof crons;
   "enrichment/enrichActions": typeof enrichment_enrichActions;

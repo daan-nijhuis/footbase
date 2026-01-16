@@ -451,4 +451,103 @@ export default defineSchema({
   })
     .index("by_player_field", ["playerId", "field"])
     .index("by_unresolved", ["resolved"]),
+
+  // ============================================================================
+  // AI Player Reports
+  // ============================================================================
+
+  // AI-generated player reports with descriptions and analysis
+  playerAiReports: defineTable({
+    playerId: v.id("players"),
+    window: v.union(v.literal("365"), v.literal("last5")), // Stats window used
+    locale: v.string(), // e.g., "nl" for Dutch
+    // Generated content
+    shortDescription: v.string(), // 2-3 sentences
+    longDescription: v.string(), // 8-12 lines, no markdown
+    archetype: v.string(), // e.g., "Box-to-Box Midfielder"
+    playstyleTags: v.array(v.string()), // max 10 tags
+    strengths: v.array(v.string()), // max 6
+    weaknesses: v.array(v.string()), // max 6
+    confidence: v.number(), // 0-1 confidence score
+    // Metadata for caching/debugging
+    model: v.string(), // Model used (e.g., "openai/gpt-4o-mini")
+    inputHash: v.string(), // SHA256 hash of input snapshot for cache invalidation
+    sourcesUsed: v.array(v.string()), // Which data providers contributed
+    generatedAt: v.number(), // Timestamp
+  })
+    .index("by_player_window_locale", ["playerId", "window", "locale"])
+    .index("by_generatedAt", ["generatedAt"]),
+
+  // AI job queue for deduplication and locking
+  playerAiJobs: defineTable({
+    playerId: v.id("players"),
+    window: v.union(v.literal("365"), v.literal("last5")),
+    locale: v.string(),
+    status: v.union(
+      v.literal("queued"),
+      v.literal("running"),
+      v.literal("done"),
+      v.literal("error")
+    ),
+    lockedUntil: v.number(), // Timestamp for distributed locking
+    attempts: v.number(), // Number of attempts
+    lastError: v.optional(v.string()), // Last error message if failed
+    updatedAt: v.number(),
+  }).index("by_player_window_locale", ["playerId", "window", "locale"]),
+
+  // Daily player view counts (for prioritizing AI generation)
+  playerViewsDaily: defineTable({
+    dayKey: v.string(), // "YYYY-MM-DD"
+    playerId: v.id("players"),
+    views: v.number(),
+  })
+    .index("by_day_player", ["dayKey", "playerId"])
+    .index("by_day_views", ["dayKey", "views"]),
+
+  // AI usage logs for cost tracking
+  aiUsageLogs: defineTable({
+    model: v.string(),
+    playerId: v.optional(v.id("players")),
+    window: v.optional(v.string()),
+    promptTokens: v.optional(v.number()),
+    completionTokens: v.optional(v.number()),
+    totalTokens: v.optional(v.number()),
+    durationMs: v.optional(v.number()),
+    success: v.boolean(),
+    error: v.optional(v.string()),
+    createdAt: v.number(),
+  }).index("by_createdAt", ["createdAt"]),
+
+  // ============================================================================
+  // AI Batch Processing (OpenAI Batch API)
+  // ============================================================================
+
+  // Batch job tracking
+  aiBatchJobs: defineTable({
+    batchId: v.string(), // OpenAI batch ID
+    inputFileId: v.string(), // OpenAI file ID for input
+    outputFileId: v.optional(v.string()), // OpenAI file ID for output
+    errorFileId: v.optional(v.string()), // OpenAI file ID for errors
+    status: v.string(), // validating, in_progress, completed, failed, etc.
+    window: v.union(v.literal("365"), v.literal("last5")),
+    locale: v.string(),
+    totalRequests: v.number(),
+    completedRequests: v.number(),
+    failedRequests: v.number(),
+    createdAt: v.number(),
+    completedAt: v.optional(v.number()),
+  }).index("by_batchId", ["batchId"]),
+
+  // Batch request metadata (for processing results)
+  aiBatchMetadata: defineTable({
+    customId: v.string(), // OpenAI custom_id for the request
+    playerId: v.id("players"),
+    inputHash: v.string(),
+    window: v.union(v.literal("365"), v.literal("last5")),
+    locale: v.string(),
+    processed: v.boolean(),
+    createdAt: v.number(),
+  })
+    .index("by_customId", ["customId"])
+    .index("by_processed", ["processed"]),
 });

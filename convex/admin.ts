@@ -1410,3 +1410,371 @@ export const updateNormalizedNames = internalMutation({
     return { updated, remaining: players.length === limit };
   },
 });
+
+// ============================================================================
+// AI Report Management
+// ============================================================================
+
+/**
+ * Manually generate an AI report for a specific player
+ *
+ * Run from dashboard: internal.admin.adminGenerateAiReport
+ * Args: { "playerId": "...", "window": "365", "forceRegenerate": false }
+ */
+export const adminGenerateAiReport = internalAction({
+  args: {
+    playerId: v.id("players"),
+    window: v.optional(v.union(v.literal("365"), v.literal("last5"))),
+    locale: v.optional(v.string()),
+    forceRegenerate: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args): Promise<{
+    success: boolean;
+    report?: unknown;
+    cached?: boolean;
+    error?: string;
+  }> => {
+    const window = args.window ?? "365";
+    const locale = args.locale ?? "nl";
+
+    console.log(
+      `[Admin] Generating AI report for player ${args.playerId}, window: ${window}, locale: ${locale}`
+    );
+
+    const result: {
+      success: boolean;
+      report?: unknown;
+      cached?: boolean;
+      error?: string;
+    } = await ctx.runAction(
+      internal.ai.generatePlayerReport.generateReport,
+      {
+        playerId: args.playerId,
+        window,
+        locale,
+        forceRegenerate: args.forceRegenerate ?? false,
+      }
+    );
+
+    console.log("[Admin] AI generation result:", {
+      success: result.success,
+      cached: result.cached,
+      error: result.error,
+    });
+
+    return result;
+  },
+});
+
+/**
+ * Manually run the daily AI batch job
+ *
+ * Run from dashboard: internal.admin.adminRunAiBatchNow
+ */
+interface AiBatchResult {
+  success: boolean;
+  totalProcessed: number;
+  reportsGenerated: number;
+  cacheHits: number;
+  errors: number;
+  errorDetails: string[];
+}
+
+export const adminRunAiBatchNow = internalAction({
+  args: {},
+  handler: async (ctx): Promise<AiBatchResult> => {
+    console.log("[Admin] Manually triggering AI batch job");
+
+    const result: AiBatchResult = await ctx.runAction(
+      internal.ai.aiCronRunner.runDailyAiBatch,
+      {}
+    );
+
+    console.log("[Admin] AI batch result:", result);
+    return result;
+  },
+});
+
+/**
+ * Get AI report statistics
+ */
+export const getAiReportStats = query({
+  args: {},
+  handler: async (ctx) => {
+    const [reports, jobs, usageLogs, viewsDaily] = await Promise.all([
+      ctx.db.query("playerAiReports").collect(),
+      ctx.db.query("playerAiJobs").collect(),
+      ctx.db.query("aiUsageLogs").collect(),
+      ctx.db.query("playerViewsDaily").collect(),
+    ]);
+
+    // Reports by model
+    const reportsByModel: Record<string, number> = {};
+    for (const report of reports) {
+      reportsByModel[report.model] = (reportsByModel[report.model] || 0) + 1;
+    }
+
+    // Reports by window
+    const reportsByWindow: Record<string, number> = {};
+    for (const report of reports) {
+      reportsByWindow[report.window] = (reportsByWindow[report.window] || 0) + 1;
+    }
+
+    // Jobs by status
+    const jobsByStatus: Record<string, number> = {};
+    for (const job of jobs) {
+      jobsByStatus[job.status] = (jobsByStatus[job.status] || 0) + 1;
+    }
+
+    // Usage logs in last 24h
+    const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+    const recentLogs = usageLogs.filter((log) => log.createdAt > oneDayAgo);
+    const successfulLogs = recentLogs.filter((log) => log.success);
+    const failedLogs = recentLogs.filter((log) => !log.success);
+
+    // Average confidence
+    const avgConfidence = reports.length > 0
+      ? reports.reduce((sum, r) => sum + r.confidence, 0) / reports.length
+      : 0;
+
+    // Top viewed players today
+    const today = new Date().toISOString().split("T")[0];
+    const todayViews = viewsDaily
+      .filter((v) => v.dayKey === today)
+      .sort((a, b) => b.views - a.views)
+      .slice(0, 10);
+
+    return {
+      totalReports: reports.length,
+      reportsByModel,
+      reportsByWindow,
+      avgConfidence: avgConfidence.toFixed(2),
+      totalJobs: jobs.length,
+      jobsByStatus,
+      usageLast24h: {
+        total: recentLogs.length,
+        successful: successfulLogs.length,
+        failed: failedLogs.length,
+      },
+      topViewedToday: todayViews.map((v) => ({
+        playerId: v.playerId,
+        views: v.views,
+      })),
+    };
+  },
+});
+
+/**
+ * List AI reports with player info
+ */
+export const listAiReports = query({
+  args: {
+    limit: v.optional(v.number()),
+    window: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 50;
+
+    let reports = await ctx.db.query("playerAiReports").collect();
+
+    if (args.window) {
+      reports = reports.filter((r) => r.window === args.window);
+    }
+
+    // Sort by generatedAt descending
+    reports.sort((a, b) => b.generatedAt - a.generatedAt);
+
+    // Get player names
+    const playerIds = [...new Set(reports.map((r) => r.playerId))];
+    const players = await Promise.all(playerIds.map((id) => ctx.db.get(id)));
+    const playerMap = new Map(players.filter(Boolean).map((p) => [p!._id, p!]));
+
+    return reports.slice(0, limit).map((r) => ({
+      _id: r._id,
+      playerId: r.playerId,
+      playerName: playerMap.get(r.playerId)?.name ?? "Unknown",
+      window: r.window,
+      locale: r.locale,
+      archetype: r.archetype,
+      confidence: r.confidence,
+      model: r.model,
+      generatedAt: new Date(r.generatedAt).toISOString(),
+    }));
+  },
+});
+
+/**
+ * Delete an AI report (for testing/cleanup)
+ */
+export const deleteAiReport = internalMutation({
+  args: {
+    reportId: v.id("playerAiReports"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.delete(args.reportId);
+    console.log(`[Admin] Deleted AI report ${args.reportId}`);
+    return { success: true };
+  },
+});
+
+/**
+ * Clear all AI reports for a player (for testing)
+ */
+export const clearPlayerAiReports = internalMutation({
+  args: {
+    playerId: v.id("players"),
+  },
+  handler: async (ctx, args) => {
+    const reports = await ctx.db
+      .query("playerAiReports")
+      .filter((q) => q.eq(q.field("playerId"), args.playerId))
+      .collect();
+
+    for (const report of reports) {
+      await ctx.db.delete(report._id);
+    }
+
+    // Also clear jobs
+    const jobs = await ctx.db
+      .query("playerAiJobs")
+      .filter((q) => q.eq(q.field("playerId"), args.playerId))
+      .collect();
+
+    for (const job of jobs) {
+      await ctx.db.delete(job._id);
+    }
+
+    console.log(`[Admin] Cleared ${reports.length} reports and ${jobs.length} jobs for player ${args.playerId}`);
+    return { reportsDeleted: reports.length, jobsDeleted: jobs.length };
+  },
+});
+
+// ============================================================================
+// OpenAI Batch API Management
+// ============================================================================
+
+/**
+ * Create an OpenAI Batch for AI report generation
+ * This uses the OpenAI Batch API for 50% cost savings on bulk generation.
+ *
+ * Run from dashboard: internal.admin.adminCreateAiBatch
+ * Args: { "window": "365", "locale": "nl", "minMinutes": 90, "limit": 100 }
+ */
+export const adminCreateAiBatch = internalAction({
+  args: {
+    window: v.optional(v.union(v.literal("365"), v.literal("last5"))),
+    locale: v.optional(v.string()),
+    minMinutes: v.optional(v.number()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<{
+    success: boolean;
+    batchId?: string;
+    totalRequests?: number;
+    skipped?: number;
+    error?: string;
+  }> => {
+    const window = args.window ?? "365";
+    const locale = args.locale ?? "nl";
+
+    console.log(
+      `[Admin] Creating AI batch for window: ${window}, locale: ${locale}, minMinutes: ${args.minMinutes ?? 90}, limit: ${args.limit ?? 1000}`
+    );
+
+    const result = await ctx.runAction(
+      internal.ai.batchApi.createBatch,
+      {
+        window,
+        locale,
+        minMinutes: args.minMinutes,
+        limit: args.limit,
+      }
+    );
+
+    console.log("[Admin] Batch creation result:", result);
+    return result;
+  },
+});
+
+/**
+ * Check the status of an OpenAI batch job
+ *
+ * Run from dashboard: internal.admin.adminCheckAiBatch
+ * Args: { "batchId": "batch_..." }
+ */
+export const adminCheckAiBatch = internalAction({
+  args: {
+    batchId: v.string(),
+  },
+  handler: async (ctx, args): Promise<{
+    status: string;
+    completed: number;
+    failed: number;
+    total: number;
+    outputFileId?: string;
+  }> => {
+    console.log(`[Admin] Checking batch status: ${args.batchId}`);
+
+    const result = await ctx.runAction(
+      internal.ai.batchApi.checkBatch,
+      { batchId: args.batchId }
+    );
+
+    console.log("[Admin] Batch status:", result);
+    return result;
+  },
+});
+
+/**
+ * Process completed batch results and upsert AI reports
+ *
+ * Run from dashboard: internal.admin.adminProcessBatchResults
+ * Args: { "batchId": "batch_..." }
+ */
+export const adminProcessBatchResults = internalAction({
+  args: {
+    batchId: v.string(),
+  },
+  handler: async (ctx, args): Promise<{
+    success: boolean;
+    processed: number;
+    failed: number;
+    error?: string;
+  }> => {
+    console.log(`[Admin] Processing batch results: ${args.batchId}`);
+
+    const result = await ctx.runAction(
+      internal.ai.batchApi.processBatchResults,
+      { batchId: args.batchId }
+    );
+
+    console.log("[Admin] Batch processing result:", result);
+    return result;
+  },
+});
+
+/**
+ * List all batch jobs
+ */
+export const listBatchJobs = query({
+  args: {},
+  handler: async (ctx) => {
+    const jobs = await ctx.db
+      .query("aiBatchJobs")
+      .order("desc")
+      .take(20);
+
+    return jobs.map((j) => ({
+      _id: j._id,
+      batchId: j.batchId,
+      status: j.status,
+      window: j.window,
+      locale: j.locale,
+      totalRequests: j.totalRequests,
+      completedRequests: j.completedRequests,
+      failedRequests: j.failedRequests,
+      createdAt: new Date(j.createdAt).toISOString(),
+      completedAt: j.completedAt ? new Date(j.completedAt).toISOString() : null,
+    }));
+  },
+});

@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
-import { convexQuery } from "@convex-dev/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,7 +11,9 @@ import { TierBadge } from "@/components/app/TierBadge";
 import { PositionBadge } from "@/components/app/PositionBadge";
 import { RatingDisplay } from "@/components/app/RatingDisplay";
 import { StatsCard, StatHighlight } from "@/components/app/StatsCard";
+import { PlayerAiReport } from "@/components/app/PlayerAiReport";
 import { ArrowLeft, Calendar, Clock, MapPin, User } from "lucide-react";
+import { useEffect, useState } from "react";
 
 export const Route = createFileRoute("/players/$playerId")({
   component: PlayerProfilePage,
@@ -19,12 +21,69 @@ export const Route = createFileRoute("/players/$playerId")({
 
 function PlayerProfilePage() {
   const { playerId } = Route.useParams();
+  const [hasTrackedView, setHasTrackedView] = useState(false);
+  const [isRequestingReport, setIsRequestingReport] = useState(false);
+  const [requestError, setRequestError] = useState<string | undefined>();
 
   const { data: player, isLoading } = useQuery(
     convexQuery(api.playerQueries.get, {
       playerId: playerId as Id<"players">,
     })
   );
+
+  // Query for AI report
+  const { data: aiReport, isLoading: isAiReportLoading, refetch: refetchAiReport } = useQuery(
+    convexQuery(api["ai/playerAiQueries"].getReport, {
+      playerId: playerId as Id<"players">,
+      window: "365",
+      locale: "nl",
+    })
+  );
+
+  // Track view mutation
+  const trackViewMutation = useConvexMutation(api["ai/playerAiQueries"].trackView);
+
+  // Request report mutation
+  const requestReportMutation = useConvexMutation(api["ai/playerAiQueries"].requestReport);
+
+  // Track view on mount (once per page load)
+  useEffect(() => {
+    if (!hasTrackedView && playerId) {
+      trackViewMutation({ playerId: playerId as Id<"players"> })
+        .then(() => setHasTrackedView(true))
+        .catch(() => {
+          // Silently fail - view tracking is best-effort
+        });
+    }
+  }, [playerId, hasTrackedView, trackViewMutation]);
+
+  // Handler to request AI report generation
+  const handleRequestReport = async () => {
+    setIsRequestingReport(true);
+    setRequestError(undefined);
+
+    try {
+      const result = await requestReportMutation({
+        playerId: playerId as Id<"players">,
+        window: "365",
+        locale: "nl",
+      });
+
+      if (!result.success) {
+        setRequestError(result.error || "Er is een fout opgetreden");
+      } else if (result.queued) {
+        // Report was queued, it will be generated async
+        // Poll for updates
+        setTimeout(() => refetchAiReport(), 3000);
+        setTimeout(() => refetchAiReport(), 10000);
+        setTimeout(() => refetchAiReport(), 30000);
+      }
+    } catch {
+      setRequestError("Er is een fout opgetreden");
+    } finally {
+      setIsRequestingReport(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -341,6 +400,15 @@ function PlayerProfilePage() {
               </CardContent>
             </Card>
           )}
+
+          {/* AI Report Section */}
+          <PlayerAiReport
+            report={aiReport}
+            isLoading={isAiReportLoading}
+            onRequestReport={player.stats?.minutes && player.stats.minutes >= 90 ? handleRequestReport : undefined}
+            isRequesting={isRequestingReport}
+            error={requestError}
+          />
         </div>
       </div>
     </div>
