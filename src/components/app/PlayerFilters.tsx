@@ -86,7 +86,7 @@ export function PlayerFilters({
       competitionId: "",
       tier: "",
       positionGroup: "",
-      minMinutes: 90,
+      minMinutes: 0,
       window: "365",
     });
   }, [onFiltersChange]);
@@ -97,7 +97,7 @@ export function PlayerFilters({
     filters.competitionId ||
     filters.tier ||
     filters.positionGroup ||
-    filters.minMinutes !== 90 ||
+    filters.minMinutes !== 0 ||
     filters.window !== "365";
 
   return (

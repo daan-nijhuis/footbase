@@ -57,7 +57,7 @@ function PlayersPage() {
     competitionId: searchParams.competitionId || "",
     tier: searchParams.tier || "",
     positionGroup: searchParams.positionGroup || "",
-    minMinutes: searchParams.minMinutes ?? 90,
+    minMinutes: searchParams.minMinutes ?? 0,
     window: searchParams.window || "365",
   };
 
@@ -158,7 +158,7 @@ function PlayersPage() {
     filters.competitionId,
     filters.tier,
     filters.positionGroup,
-    filters.minMinutes !== 90,
+    filters.minMinutes !== 0,
     filters.window !== "365",
   ].filter(Boolean).length;
 
