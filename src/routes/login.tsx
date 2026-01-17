@@ -13,7 +13,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { authClient } from "@/lib/auth-client";
+import { authClient, authConfig } from "@/lib/auth-client";
 
 export const Route = createFileRoute("/login")({
   component: LoginPage,
@@ -44,6 +44,16 @@ function LoginPage() {
     setIsLoading(true);
     setError(null);
 
+    // Check if auth is properly configured
+    if (!authConfig.isConfigured) {
+      setError(
+        "Authenticatie is niet correct geconfigureerd. Neem contact op met de beheerder."
+      );
+      console.error("Auth not configured. VITE_CONVEX_SITE_URL:", authConfig.baseURL);
+      setIsLoading(false);
+      return;
+    }
+
     try {
       if (mode === "login") {
         const result = await authClient.signIn.email({
@@ -52,7 +62,9 @@ function LoginPage() {
         });
 
         if (result.error) {
-          setError(result.error.message || "Login failed. Please try again.");
+          // Map common error codes to user-friendly Dutch messages
+          const errorMessage = getErrorMessage(result.error);
+          setError(errorMessage);
           setIsLoading(false);
         } else {
           setSuccess(true);
@@ -66,7 +78,8 @@ function LoginPage() {
         });
 
         if (result.error) {
-          setError(result.error.message || "Sign up failed. Please try again.");
+          const errorMessage = getErrorMessage(result.error);
+          setError(errorMessage);
           setIsLoading(false);
         } else {
           setSuccess(true);
@@ -74,10 +87,67 @@ function LoginPage() {
         }
       }
     } catch (err) {
-      setError("An unexpected error occurred. Please try again.");
+      // Handle network errors and unexpected failures
+      const errorMessage = getNetworkErrorMessage(err);
+      setError(errorMessage);
+      console.error("Auth error:", err);
       setIsLoading(false);
     }
   };
+
+  // Map Better Auth error codes to Dutch user-friendly messages
+  function getErrorMessage(error: { message?: string; code?: string; status?: number }): string {
+    const code = error.code?.toLowerCase() || "";
+    const message = error.message?.toLowerCase() || "";
+    const status = error.status;
+
+    // Check status codes first
+    if (status === 404) {
+      return "Authenticatieserver niet bereikbaar. Controleer de configuratie.";
+    }
+    if (status === 401 || code === "invalid_credentials" || message.includes("invalid")) {
+      return "Onjuist e-mailadres of wachtwoord.";
+    }
+    if (status === 429 || code === "too_many_requests") {
+      return "Te veel inlogpogingen. Probeer het later opnieuw.";
+    }
+
+    // Check error codes
+    if (code === "user_not_found" || message.includes("user not found")) {
+      return "Geen account gevonden met dit e-mailadres.";
+    }
+    if (code === "email_already_exists" || message.includes("already exists")) {
+      return "Er bestaat al een account met dit e-mailadres.";
+    }
+    if (code === "invalid_email" || message.includes("invalid email")) {
+      return "Ongeldig e-mailadres.";
+    }
+    if (code === "password_too_short" || message.includes("password") && message.includes("short")) {
+      return "Wachtwoord moet minimaal 8 tekens bevatten.";
+    }
+    if (code === "weak_password" || message.includes("weak password")) {
+      return "Kies een sterker wachtwoord.";
+    }
+
+    // Fallback to original message or generic error
+    return error.message || "Er is iets misgegaan. Probeer het opnieuw.";
+  }
+
+  // Handle network-level errors
+  function getNetworkErrorMessage(err: unknown): string {
+    if (err instanceof TypeError && err.message.includes("fetch")) {
+      return "Kan geen verbinding maken met de server. Controleer je internetverbinding.";
+    }
+    if (err instanceof Error) {
+      if (err.message.includes("404")) {
+        return "Authenticatieserver niet gevonden. De app is mogelijk niet correct geconfigureerd.";
+      }
+      if (err.message.includes("network") || err.message.includes("CORS")) {
+        return "Netwerkfout. Probeer het later opnieuw.";
+      }
+    }
+    return "Er is een onverwachte fout opgetreden. Probeer het opnieuw.";
+  }
 
   const toggleMode = () => {
     setMode(mode === "login" ? "signup" : "login");
