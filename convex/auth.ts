@@ -63,3 +63,36 @@ export const seedUser = action({
     }
   },
 });
+
+// Action to reset user password (admin use only)
+export const resetUserPassword = action({
+  args: {
+    email: v.string(),
+    newPassword: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const auth = createAuth(ctx);
+
+    try {
+      // Use Better Auth's internal context to update password
+      const authCtx = await auth.$context;
+
+      // Find the user by email
+      const result = await authCtx.internalAdapter.findUserByEmail(args.email);
+      if (!result || !result.user) {
+        return { success: false, error: "User not found" };
+      }
+
+      // Hash the new password using Better Auth's password utility
+      const hashedPassword = await authCtx.password.hash(args.newPassword);
+
+      // Update the account's password
+      await authCtx.internalAdapter.updatePassword(result.user.id, hashedPassword);
+
+      return { success: true, message: "Password updated successfully" };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      return { success: false, error: errorMessage };
+    }
+  },
+});
