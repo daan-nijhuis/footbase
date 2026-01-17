@@ -2,5 +2,11 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "pnpm build",
   "outputDirectory": ".output/public",
-  "installCommand": "pnpm install"
+  "installCommand": "pnpm install",
+  "rewrites": [
+    {
+      "source": "/api/auth/:path*",
+      "destination": "https://descriptive-kudu-712.convex.site/api/auth/:path*"
+    }
+  ]
 }
