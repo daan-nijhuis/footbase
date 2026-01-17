@@ -49,7 +49,7 @@ export const runDailyAiBatch = internalAction({
     console.log(`[AI Batch] Starting daily batch for ${dayKey}, limit: ${dailyLimit}`);
 
     // 1. Process queued jobs first (from lazy generation requests)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // @ts-expect-error - Type instantiation depth limit workaround for complex Convex types
     const getQueuedJobsRef = internal.ai.playerAiQueries.getQueuedJobs as any;
     const queuedJobs: Array<{ playerId: string; window: "365" | "last5"; locale: string }> =
       await ctx.runQuery(getQueuedJobsRef, {

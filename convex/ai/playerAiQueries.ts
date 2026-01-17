@@ -8,6 +8,7 @@ import { v } from "convex/values";
 import { query, mutation, internalMutation, internalQuery } from "../_generated/server";
 import { aiWindowValidator } from "./buildPlayerAiInput";
 import type { Doc } from "../_generated/dataModel";
+import { requireAuth } from "../lib/auth";
 
 // ============================================================================
 // Public Queries
@@ -23,6 +24,8 @@ export const getReport = query({
     locale: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    await requireAuth(ctx);
+
     const window = args.window ?? "365";
     const locale = args.locale ?? "nl";
 
@@ -60,6 +63,8 @@ export const getReportStatus = query({
     locale: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    await requireAuth(ctx);
+
     const window = args.window ?? "365";
     const locale = args.locale ?? "nl";
 
@@ -102,6 +107,8 @@ export const trackView = mutation({
     playerId: v.id("players"),
   },
   handler: async (ctx, args) => {
+    await requireAuth(ctx);
+
     // Verify player exists
     const player = await ctx.db.get(args.playerId);
     if (!player) return;
@@ -144,6 +151,8 @@ export const requestReport = mutation({
     locale: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    await requireAuth(ctx);
+
     const window = args.window ?? "365";
     const locale = args.locale ?? "nl";
 

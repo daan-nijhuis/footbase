@@ -13,6 +13,7 @@
 import { v } from "convex/values";
 import { internalAction, internalMutation, internalQuery, query } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { requireAuth } from "./lib/auth";
 import type { Id } from "./_generated/dataModel";
 import { tierValidator } from "./schema";
 import type { IngestionResult } from "./ingest/apiFootballIngest";
@@ -477,6 +478,8 @@ export const listPlayersWithRatings = query({
     hasRatingOnly: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
+    await requireAuth(ctx);
+
     const limit = args.limit ?? 100;
 
     // Get all players
@@ -556,6 +559,8 @@ export const listCompetitions = query({
     activeOnly: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
+    await requireAuth(ctx);
+
     let competitions;
 
     if (args.country) {
@@ -592,6 +597,8 @@ export const listIngestionRuns = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    await requireAuth(ctx);
+
     const limit = args.limit || 10;
 
     const runs = await ctx.db
@@ -618,6 +625,8 @@ export const listIngestionRuns = query({
 export const getIngestionStats = query({
   args: {},
   handler: async (ctx) => {
+    await requireAuth(ctx);
+
     const [competitions, teams, players, appearances] = await Promise.all([
       ctx.db.query("competitions").collect(),
       ctx.db.query("teams").collect(),
@@ -974,6 +983,8 @@ export const debugAppearances = internalQuery({
 export const getRatingStats = query({
   args: {},
   handler: async (ctx) => {
+    await requireAuth(ctx);
+
     const [playerRatings, playerRollingStats, competitionRatings, ratingProfiles] =
       await Promise.all([
         ctx.db.query("playerRatings").collect(),
@@ -1031,6 +1042,8 @@ export const getRatingStats = query({
 export const listRatingProfiles = query({
   args: {},
   handler: async (ctx) => {
+    await requireAuth(ctx);
+
     return await ctx.db.query("ratingProfiles").collect();
   },
 });
@@ -1192,6 +1205,8 @@ export const adminEnrichFromAllProviders = internalAction({
 export const getEnrichmentStats = query({
   args: {},
   handler: async (ctx) => {
+    await requireAuth(ctx);
+
     const [
       externalIds,
       profiles,
@@ -1254,6 +1269,8 @@ export const listUnresolvedPlayers = query({
     status: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    await requireAuth(ctx);
+
     const limit = args.limit ?? 50;
 
     let query = ctx.db.query("unresolvedExternalPlayers");
@@ -1286,6 +1303,8 @@ export const listFieldConflicts = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    await requireAuth(ctx);
+
     const limit = args.limit ?? 50;
 
     let conflicts = await ctx.db.query("playerFieldConflicts").collect();
@@ -1502,6 +1521,8 @@ export const adminRunAiBatchNow = internalAction({
 export const getAiReportStats = query({
   args: {},
   handler: async (ctx) => {
+    await requireAuth(ctx);
+
     const [reports, jobs, usageLogs, viewsDaily] = await Promise.all([
       ctx.db.query("playerAiReports").collect(),
       ctx.db.query("playerAiJobs").collect(),
@@ -1574,6 +1595,8 @@ export const listAiReports = query({
     window: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    await requireAuth(ctx);
+
     const limit = args.limit ?? 50;
 
     let reports = await ctx.db.query("playerAiReports").collect();
@@ -1760,6 +1783,8 @@ export const adminProcessBatchResults = internalAction({
 export const listBatchJobs = query({
   args: {},
   handler: async (ctx) => {
+    await requireAuth(ctx);
+
     const jobs = await ctx.db
       .query("aiBatchJobs")
       .order("desc")

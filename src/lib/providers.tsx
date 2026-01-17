@@ -1,34 +1,25 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ConvexProvider } from "convex/react";
-import { convex, convexQueryClient } from "./convex";
-
-// Create QueryClient with Convex adapter
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      // Use Convex's caching/updating for queries
-      queryKeyHashFn: convexQueryClient.hashFn(),
-      queryFn: convexQueryClient.queryFn(),
-    },
-  },
-});
-
-// Connect the Convex query client to the QueryClient
-convexQueryClient.connect(queryClient);
+import { ConvexBetterAuthProvider } from "@convex-dev/better-auth/react";
+import { ConvexQueryClient } from "@convex-dev/react-query";
+import { authClient } from "./auth-client";
 
 interface ProvidersProps {
   children: React.ReactNode;
+  queryClient: QueryClient;
+  convexQueryClient: ConvexQueryClient;
 }
 
-export function Providers({ children }: ProvidersProps) {
+export function Providers({
+  children,
+  queryClient,
+  convexQueryClient,
+}: ProvidersProps) {
   return (
-    <ConvexProvider client={convex}>
-      <QueryClientProvider client={queryClient}>
-        {children}
-      </QueryClientProvider>
-    </ConvexProvider>
+    <ConvexBetterAuthProvider
+      client={convexQueryClient.convexClient}
+      authClient={authClient}
+    >
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    </ConvexBetterAuthProvider>
   );
 }
-
-// Export queryClient for use in router context if needed
-export { queryClient };

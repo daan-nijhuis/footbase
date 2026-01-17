@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as DebugRouteImport } from './routes/debug'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as PlayersIndexRouteImport } from './routes/players.index'
@@ -16,6 +17,11 @@ import { Route as CompetitionsIndexRouteImport } from './routes/competitions.ind
 import { Route as PlayersPlayerIdRouteImport } from './routes/players.$playerId'
 import { Route as CompetitionsCompetitionIdRouteImport } from './routes/competitions.$competitionId'
 
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DebugRoute = DebugRouteImport.update({
   id: '/debug',
   path: '/debug',
@@ -51,6 +57,7 @@ const CompetitionsCompetitionIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/debug': typeof DebugRoute
+  '/login': typeof LoginRoute
   '/competitions/$competitionId': typeof CompetitionsCompetitionIdRoute
   '/players/$playerId': typeof PlayersPlayerIdRoute
   '/competitions': typeof CompetitionsIndexRoute
@@ -59,6 +66,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/debug': typeof DebugRoute
+  '/login': typeof LoginRoute
   '/competitions/$competitionId': typeof CompetitionsCompetitionIdRoute
   '/players/$playerId': typeof PlayersPlayerIdRoute
   '/competitions': typeof CompetitionsIndexRoute
@@ -68,6 +76,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/debug': typeof DebugRoute
+  '/login': typeof LoginRoute
   '/competitions/$competitionId': typeof CompetitionsCompetitionIdRoute
   '/players/$playerId': typeof PlayersPlayerIdRoute
   '/competitions/': typeof CompetitionsIndexRoute
@@ -78,6 +87,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/debug'
+    | '/login'
     | '/competitions/$competitionId'
     | '/players/$playerId'
     | '/competitions'
@@ -86,6 +96,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/debug'
+    | '/login'
     | '/competitions/$competitionId'
     | '/players/$playerId'
     | '/competitions'
@@ -94,6 +105,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/debug'
+    | '/login'
     | '/competitions/$competitionId'
     | '/players/$playerId'
     | '/competitions/'
@@ -103,6 +115,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DebugRoute: typeof DebugRoute
+  LoginRoute: typeof LoginRoute
   CompetitionsCompetitionIdRoute: typeof CompetitionsCompetitionIdRoute
   PlayersPlayerIdRoute: typeof PlayersPlayerIdRoute
   CompetitionsIndexRoute: typeof CompetitionsIndexRoute
@@ -111,6 +124,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/debug': {
       id: '/debug'
       path: '/debug'
@@ -159,6 +179,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DebugRoute: DebugRoute,
+  LoginRoute: LoginRoute,
   CompetitionsCompetitionIdRoute: CompetitionsCompetitionIdRoute,
   PlayersPlayerIdRoute: PlayersPlayerIdRoute,
   CompetitionsIndexRoute: CompetitionsIndexRoute,

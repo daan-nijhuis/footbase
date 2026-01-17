@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { tierValidator } from "./schema";
+import { requireAuth } from "./lib/auth";
 
 /**
  * List competitions with optional filters
@@ -12,6 +13,8 @@ export const list = query({
     isActive: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
+    await requireAuth(ctx);
+
     // Fetch all competitions and filter in memory for flexibility
     const competitions = await ctx.db.query("competitions").collect();
 
@@ -79,6 +82,8 @@ export const get = query({
     competitionId: v.id("competitions"),
   },
   handler: async (ctx, args) => {
+    await requireAuth(ctx);
+
     const competition = await ctx.db.get(args.competitionId);
     if (!competition) return null;
 
@@ -114,6 +119,8 @@ export const get = query({
 export const countries = query({
   args: {},
   handler: async (ctx) => {
+    await requireAuth(ctx);
+
     const competitions = await ctx.db.query("competitions").collect();
     const countriesSet = [...new Set(competitions.map((c) => c.country))];
     return countriesSet.sort();

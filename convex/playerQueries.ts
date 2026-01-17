@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { positionGroupValidator, tierValidator } from "./schema";
+import { requireAuth } from "./lib/auth";
 import type { Doc, Id } from "./_generated/dataModel";
 
 // Window type for rating selection
@@ -34,6 +35,8 @@ export const list = query({
     pageSize: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    await requireAuth(ctx);
+
     const minMinutes = args.minMinutes ?? 90;
     const window = args.window ?? "365";
     const sort = args.sort ?? "rating";
@@ -248,6 +251,8 @@ export const get = query({
     playerId: v.id("players"),
   },
   handler: async (ctx, args) => {
+    await requireAuth(ctx);
+
     const player = await ctx.db.get(args.playerId);
     if (!player) return null;
 
