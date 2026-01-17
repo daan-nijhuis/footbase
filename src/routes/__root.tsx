@@ -3,6 +3,7 @@ import {
   Outlet,
   Scripts,
   createRootRouteWithContext,
+  useRouterState,
 } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { TanStackDevtools } from "@tanstack/react-devtools";
@@ -50,10 +51,11 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const { data: session, isPending } = authClient.useSession();
+  const routerState = useRouterState();
+  const pathname = routerState.location.pathname;
 
-  // Check if on login page
-  const isLoginPage =
-    typeof window !== "undefined" && window.location.pathname === "/login";
+  // Check if on login page (SSR-safe using router state)
+  const isLoginPage = pathname === "/login";
 
   // On login page, only render the page content (no header)
   if (isLoginPage) {
@@ -65,7 +67,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     return null;
   }
 
-  // Redirect to login if not authenticated
+  // Redirect to login if not authenticated (client-side only)
   if (!session) {
     if (typeof window !== "undefined") {
       window.location.href = "/login";
