@@ -26,15 +26,15 @@ function HomePage() {
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto mb-8">
             European Football Scouting Platform
           </p>
-          <div className="flex items-center justify-center gap-4">
-            <Link to="/players">
-              <Button size="lg" className="gap-2">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4 px-4 sm:px-0">
+            <Link to="/players" className="w-full sm:w-auto">
+              <Button size="lg" className="gap-2 w-full sm:w-auto text-base">
                 <Users className="h-5 w-5" />
                 Bekijk Spelers
               </Button>
             </Link>
-            <Link to="/competitions">
-              <Button size="lg" variant="outline" className="gap-2">
+            <Link to="/competitions" className="w-full sm:w-auto">
+              <Button size="lg" variant="outline" className="gap-2 w-full sm:w-auto text-base">
                 <Trophy className="h-5 w-5" />
                 Bekijk Competities
               </Button>
