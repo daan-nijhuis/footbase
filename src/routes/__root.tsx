@@ -1,8 +1,10 @@
+import { useEffect } from "react";
 import {
   HeadContent,
   Outlet,
   Scripts,
   createRootRouteWithContext,
+  useRouter,
   useRouterState,
 } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
@@ -64,27 +66,29 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const { data: session, isPending } = authClient.useSession();
+  const router = useRouter();
   const routerState = useRouterState();
   const pathname = routerState.location.pathname;
 
   // Check if on login page (SSR-safe using router state)
   const isLoginPage = pathname === "/login";
 
+  // Redirect to login if not authenticated
+  const shouldRedirect = !isLoginPage && !isPending && !session;
+
+  useEffect(() => {
+    if (shouldRedirect) {
+      router.navigate({ to: "/login" });
+    }
+  }, [shouldRedirect, router]);
+
   // On login page, only render the page content (no header)
   if (isLoginPage) {
     return <Outlet />;
   }
 
-  // Wait for session check to complete
-  if (isPending) {
-    return null;
-  }
-
-  // Redirect to login if not authenticated (client-side only)
-  if (!session) {
-    if (typeof window !== "undefined") {
-      window.location.href = "/login";
-    }
+  // Wait for session check or redirect
+  if (isPending || !session) {
     return null;
   }
 
