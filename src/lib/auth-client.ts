@@ -11,8 +11,8 @@ export const authClient = createAuthClient({
   plugins: [convexClient(), crossDomainClient()],
 });
 
-// Export auth config info for debugging
+// Export auth config info for debugging (SSR-safe)
 export const authConfig = {
-  baseURL: window?.location?.origin || "",
+  baseURL: typeof window !== "undefined" ? window.location.origin : "",
   isConfigured: true, // Always configured when using same-origin proxy
 };
