@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { useState, useEffect, useRef } from "react";
+import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, Mail, Lock, User, ArrowRight, CheckCircle } from "lucide-react";
 
@@ -23,6 +23,7 @@ type AuthMode = "login" | "signup";
 
 function LoginPage() {
   const { data: session } = authClient.useSession();
+  const router = useRouter();
   const [mode, setMode] = useState<AuthMode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -30,14 +31,17 @@ function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const hasRedirected = useRef(false);
 
   // If already logged in, redirect to home (check cached data too)
   useEffect(() => {
+    if (hasRedirected.current) return;
     const cachedSession = authClient.getSessionData?.();
     if (session || cachedSession) {
-      window.location.href = "/";
+      hasRedirected.current = true;
+      router.navigate({ to: "/" });
     }
-  }, [session]);
+  }, [session, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,7 +72,8 @@ function LoginPage() {
           setIsLoading(false);
         } else {
           setSuccess(true);
-          window.location.href = "/";
+          hasRedirected.current = true;
+          router.navigate({ to: "/" });
         }
       } else {
         const result = await authClient.signUp.email({
@@ -83,7 +88,8 @@ function LoginPage() {
           setIsLoading(false);
         } else {
           setSuccess(true);
-          window.location.href = "/";
+          hasRedirected.current = true;
+          router.navigate({ to: "/" });
         }
       }
     } catch (err) {

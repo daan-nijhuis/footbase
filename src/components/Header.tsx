@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useRouter, useRouterState } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
 import { Users, Trophy, LogOut, Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -44,6 +44,7 @@ export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const { data: session } = authClient.useSession();
   const user = session?.user;
+  const router = useRouter();
   const routerState = useRouterState();
 
   // Close menu on route change
@@ -66,7 +67,7 @@ export default function Header() {
   const handleSignOut = async () => {
     setIsMenuOpen(false);
     await authClient.signOut();
-    window.location.href = "/login";
+    router.navigate({ to: "/login" });
   };
 
   const closeMenu = () => setIsMenuOpen(false);
