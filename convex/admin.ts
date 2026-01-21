@@ -132,6 +132,27 @@ export const adminRunDailyNow = internalAction({
   },
 });
 
+/**
+ * Manually trigger a StatsBomb sync run
+ *
+ * Run from dashboard: internal.admin.adminRunStatsBombSyncNow
+ * Args: {}
+ */
+export const adminRunStatsBombSyncNow = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    console.log("[Admin] Running StatsBomb sync...");
+
+    const result = await ctx.runAction(
+      internal.ingest.statsbombIngest.runDailySync,
+      {}
+    );
+
+    console.log("[Admin] StatsBomb sync result:", result);
+    return result;
+  },
+});
+
 // Internal helper query to get competition by ID
 export const getCompetitionById = internalQuery({
   args: { competitionId: v.id("competitions") },
@@ -1802,5 +1823,602 @@ export const listBatchJobs = query({
       createdAt: new Date(j.createdAt).toISOString(),
       completedAt: j.completedAt ? new Date(j.completedAt).toISOString() : null,
     }));
+  },
+});
+
+// ============================================================================
+// StatsBomb Coverage Statistics
+// ============================================================================
+
+/**
+ * Internal version - Get StatsBomb data coverage statistics (no auth required)
+ * Run from CLI: npx convex run admin:internalGetStatsBombCoverage
+ */
+export const internalGetStatsBombCoverage = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const [
+      players,
+      statsbombIds,
+      aggregates,
+      matches,
+      competitionSeasons,
+      mappings,
+    ] = await Promise.all([
+      ctx.db.query("players").collect(),
+      ctx.db
+        .query("playerExternalIds")
+        .filter((q) => q.eq(q.field("provider"), "statsbomb"))
+        .collect(),
+      ctx.db
+        .query("providerPlayerAggregates")
+        .filter((q) => q.eq(q.field("provider"), "statsbomb"))
+        .collect(),
+      ctx.db.query("statsbombMatches").collect(),
+      ctx.db.query("statsbombCompetitionSeasons").collect(),
+      ctx.db.query("statsbombPlayerMappings").collect(),
+    ]);
+
+    // Count players with season aggregates
+    const playersWithSeasonStats = new Set(
+      aggregates.filter((a) => a.window === "season").map((a) => a.playerId)
+    );
+
+    // Count players with match stats
+    const matchStatsPlayers = await ctx.db
+      .query("providerPlayerMatchStats")
+      .filter((q) => q.eq(q.field("provider"), "statsbomb"))
+      .collect();
+    const playersWithMatchStats = new Set(matchStatsPlayers.map((m) => m.playerId));
+
+    // Match ingestion status
+    const matchesIngested = matches.filter((m) => m.playerStatsIngested).length;
+    const matchesPending = matches.filter(
+      (m) => !m.playerStatsIngested && m.status === "available"
+    ).length;
+
+    // Competition coverage
+    const competitionCoverage = competitionSeasons.map((cs) => ({
+      name: cs.name,
+      country: cs.country,
+      season: cs.season,
+      syncStatus: cs.syncStatus,
+      matchCount: cs.matchCount ?? 0,
+    }));
+
+    // Linked vs unlinked mappings
+    const linkedMappings = mappings.filter((m) => m.playerId != null).length;
+    const unlinkedMappings = mappings.filter((m) => m.playerId == null).length;
+
+    return {
+      totalPlayers: players.length,
+      playersWithStatsBombId: statsbombIds.length,
+      playersWithSeasonStats: playersWithSeasonStats.size,
+      playersWithMatchStats: playersWithMatchStats.size,
+      coveragePercent:
+        players.length > 0
+          ? ((statsbombIds.length / players.length) * 100).toFixed(1)
+          : "0",
+      totalMatches: matches.length,
+      matchesIngested,
+      matchesPending,
+      matchesUnavailable: matches.length - matchesIngested - matchesPending,
+      totalMappings: mappings.length,
+      linkedMappings,
+      unlinkedMappings,
+      competitionSeasons: competitionCoverage,
+    };
+  },
+});
+
+/**
+ * Get StatsBomb data coverage statistics
+ * Shows how many players have StatsBomb data vs API-Football only
+ */
+export const getStatsBombCoverageStats = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAuth(ctx);
+
+    const [
+      players,
+      statsbombIds,
+      aggregates,
+      matches,
+      competitionSeasons,
+      mappings,
+    ] = await Promise.all([
+      ctx.db.query("players").collect(),
+      ctx.db
+        .query("playerExternalIds")
+        .filter((q) => q.eq(q.field("provider"), "statsbomb"))
+        .collect(),
+      ctx.db
+        .query("providerPlayerAggregates")
+        .filter((q) => q.eq(q.field("provider"), "statsbomb"))
+        .collect(),
+      ctx.db.query("statsbombMatches").collect(),
+      ctx.db.query("statsbombCompetitionSeasons").collect(),
+      ctx.db.query("statsbombPlayerMappings").collect(),
+    ]);
+
+    // Count players with season aggregates
+    const playersWithSeasonStats = new Set(
+      aggregates.filter((a) => a.window === "season").map((a) => a.playerId)
+    );
+
+    // Count players with match stats
+    const matchStatsPlayers = await ctx.db
+      .query("providerPlayerMatchStats")
+      .filter((q) => q.eq(q.field("provider"), "statsbomb"))
+      .collect();
+    const playersWithMatchStats = new Set(matchStatsPlayers.map((m) => m.playerId));
+
+    // Match ingestion status
+    const matchesIngested = matches.filter((m) => m.playerStatsIngested).length;
+    const matchesPending = matches.filter(
+      (m) => !m.playerStatsIngested && m.status === "available"
+    ).length;
+
+    // Competition coverage
+    const competitionCoverage = competitionSeasons.map((cs) => ({
+      name: cs.name,
+      country: cs.country,
+      season: cs.season,
+      syncStatus: cs.syncStatus,
+      matchCount: cs.matchCount ?? 0,
+    }));
+
+    // Linked vs unlinked mappings
+    const linkedMappings = mappings.filter((m) => m.playerId != null).length;
+    const unlinkedMappings = mappings.filter((m) => m.playerId == null).length;
+
+    return {
+      // Player coverage
+      totalPlayers: players.length,
+      playersWithStatsBombId: statsbombIds.length,
+      playersWithSeasonStats: playersWithSeasonStats.size,
+      playersWithMatchStats: playersWithMatchStats.size,
+      coveragePercent:
+        players.length > 0
+          ? ((statsbombIds.length / players.length) * 100).toFixed(1)
+          : "0",
+
+      // Match coverage
+      totalMatches: matches.length,
+      matchesIngested,
+      matchesPending,
+      matchesUnavailable: matches.length - matchesIngested - matchesPending,
+
+      // Mapping coverage
+      totalMappings: mappings.length,
+      linkedMappings,
+      unlinkedMappings,
+
+      // Competition coverage
+      competitionSeasons: competitionCoverage,
+    };
+  },
+});
+
+/**
+ * Get a sample player with full StatsBomb data for testing
+ */
+export const getSamplePlayerWithStats = internalQuery({
+  args: { playerName: v.optional(v.string()) },
+  handler: async (ctx, { playerName }) => {
+    // If player name provided, search for that player
+    let statsbombPlayer;
+    if (playerName) {
+      statsbombPlayer = await ctx.db
+        .query("players")
+        .filter((q) =>
+          q.and(
+            q.eq(q.field("provider"), "statsbomb"),
+            q.eq(q.field("name"), playerName)
+          )
+        )
+        .first();
+    } else {
+      // Get a player that was created FROM StatsBomb (not the first one)
+      const players = await ctx.db
+        .query("players")
+        .filter((q) => q.eq(q.field("provider"), "statsbomb"))
+        .take(10);
+      statsbombPlayer = players[5]; // Get 6th player to avoid debug-modified ones
+    }
+
+    if (!statsbombPlayer) {
+      return { error: "No StatsBomb player found" };
+    }
+
+    // Get a player with StatsBomb external ID
+    const externalId = await ctx.db
+      .query("playerExternalIds")
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("provider"), "statsbomb"),
+          q.eq(q.field("playerId"), statsbombPlayer._id)
+        )
+      )
+      .first();
+
+    if (!externalId) {
+      return { error: "No StatsBomb player found" };
+    }
+
+    const player = await ctx.db.get(externalId.playerId);
+    if (!player) {
+      return { error: "Player not found" };
+    }
+
+    // Get season aggregates
+    const seasonAgg = await ctx.db
+      .query("providerPlayerAggregates")
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("playerId"), externalId.playerId),
+          q.eq(q.field("provider"), "statsbomb"),
+          q.eq(q.field("window"), "season")
+        )
+      )
+      .first();
+
+    // Get team and competition
+    const [team, competition] = await Promise.all([
+      ctx.db.get(player.teamId),
+      ctx.db.get(player.competitionId),
+    ]);
+
+    return {
+      player: {
+        id: player._id,
+        name: player.name,
+        position: player.position,
+        positionGroup: player.positionGroup,
+        provider: player.provider,
+        team: team?.name,
+        competition: competition?.name,
+      },
+      statsbombStats: seasonAgg
+        ? {
+            season: seasonAgg.season,
+            minutes: seasonAgg.minutes,
+            appearances: seasonAgg.appearances,
+            totals: seasonAgg.totals,
+            per90: seasonAgg.per90,
+            additionalStats: seasonAgg.additionalStats,
+            // Include extracted features to see full data
+            features: seasonAgg.features,
+            // Show specific values for goals, xg, obv from raw
+            rawValues: seasonAgg.raw
+              ? {
+                  goals_90: (seasonAgg.raw as Record<string, unknown>).player_season_goals_90,
+                  np_xg_90: (seasonAgg.raw as Record<string, unknown>).player_season_np_xg_90,
+                  obv_90: (seasonAgg.raw as Record<string, unknown>).player_season_obv_90,
+                  minutes: (seasonAgg.raw as Record<string, unknown>).player_season_minutes,
+                  appearances: (seasonAgg.raw as Record<string, unknown>).player_season_appearances,
+                  // Check field existence
+                  hasObvField: "player_season_obv_90" in (seasonAgg.raw as Record<string, unknown>),
+                  rawFieldCount: Object.keys(seasonAgg.raw as Record<string, unknown>).length,
+                }
+              : null,
+          }
+        : null,
+    };
+  },
+});
+
+/**
+ * Debug query to check external IDs and season stats
+ */
+export const countStatsBombExternalIds = internalQuery({
+  args: { type: v.optional(v.union(v.literal("externalIds"), v.literal("seasonAggs"))) },
+  handler: async (ctx, { type = "externalIds" }) => {
+    // Count using take() in batches
+    const BATCH_SIZE = 500;
+
+    if (type === "externalIds") {
+      let count = 0;
+      let batch;
+      do {
+        batch = await ctx.db
+          .query("playerExternalIds")
+          .filter((q) => q.eq(q.field("provider"), "statsbomb"))
+          .take(BATCH_SIZE);
+        count = batch.length;
+      } while (false);  // Just one batch
+      return { totalExternalIds: count, note: "Sample of first 500" };
+    } else {
+      const batch = await ctx.db
+        .query("providerPlayerAggregates")
+        .filter((q) =>
+          q.and(
+            q.eq(q.field("provider"), "statsbomb"),
+            q.eq(q.field("window"), "season")
+          )
+        )
+        .take(BATCH_SIZE);
+      return { totalSeasonAggregates: batch.length, note: "Sample of first 500" };
+    }
+  },
+});
+
+export const debugStatsBombData = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    // Get some StatsBomb external IDs
+    const statsbombExternalIds = await ctx.db
+      .query("playerExternalIds")
+      .filter((q) => q.eq(q.field("provider"), "statsbomb"))
+      .take(10);
+
+    // Get some StatsBomb season aggregates
+    const statsbombSeasonAggs = await ctx.db
+      .query("providerPlayerAggregates")
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("provider"), "statsbomb"),
+          q.eq(q.field("window"), "season")
+        )
+      )
+      .take(10);
+
+    // Get player names for the external IDs
+    const playerIds = statsbombExternalIds.map((e) => e.playerId);
+    const players = await Promise.all(
+      playerIds.map((id) => ctx.db.get(id))
+    );
+
+    return {
+      externalIds: statsbombExternalIds.map((e, i) => ({
+        providerPlayerId: e.providerPlayerId,
+        playerId: e.playerId,
+        playerName: players[i]?.name,
+      })),
+      seasonAggregates: statsbombSeasonAggs.map((a) => ({
+        playerId: a.playerId,
+        season: a.season,
+        minutes: a.minutes,
+        hasFeatures: !!a.features,
+      })),
+      totalExternalIds: statsbombExternalIds.length,
+      totalSeasonAggs: statsbombSeasonAggs.length,
+    };
+  },
+});
+
+import * as StatsBomb from "./providers/statsbomb";
+
+/**
+ * Delete StatsBomb season aggregates in batches
+ */
+export const deleteStatsBombSeasonAggregates = internalMutation({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, { limit = 100 }) => {
+    const aggregates = await ctx.db
+      .query("providerPlayerAggregates")
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("provider"), "statsbomb"),
+          q.eq(q.field("window"), "season")
+        )
+      )
+      .take(limit);
+
+    for (const agg of aggregates) {
+      await ctx.db.delete(agg._id);
+    }
+
+    return { deleted: aggregates.length, hasMore: aggregates.length === limit };
+  },
+});
+
+/**
+ * Test feature extraction directly
+ */
+export const testFeatureExtraction = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    // Get a season aggregate with raw data
+    const seasonAgg = await ctx.db
+      .query("providerPlayerAggregates")
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("provider"), "statsbomb"),
+          q.eq(q.field("window"), "season")
+        )
+      )
+      .first();
+
+    if (!seasonAgg?.raw) {
+      return { error: "No season aggregate with raw data found" };
+    }
+
+    const raw = seasonAgg.raw as Record<string, unknown>;
+
+    // Manually extract the values using the same logic as extractSeasonRatingFeatures
+    return {
+      extractedValues: {
+        goals: raw.player_season_goals_90,
+        npxG: raw.player_season_np_xg_90,
+        obv: raw.player_season_obv_90,
+        obvPass: raw.player_season_obv_pass_90,
+        assists: raw.player_season_assists_90,
+        tackles: raw.player_season_tackles_90,
+        interceptions: raw.player_season_interceptions_90,
+        progressivePasses: raw.player_season_progressive_passes_90,
+      },
+      storedFeatures: seasonAgg.features,
+      storedPer90: seasonAgg.per90,
+      storedAdditionalStats: seasonAgg.additionalStats,
+    };
+  },
+});
+
+/**
+ * Debug action to test season stats API and catch specific errors
+ */
+export const debugSeasonStatsApi = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    // Get the first active competition season
+    const competitionSeasons = await ctx.runQuery(
+      internal.ingest.statsbombIngest.getActiveCompetitionSeasons
+    );
+
+    const cs = competitionSeasons.find((c) => c.competitionId);
+    if (!cs) {
+      return { error: "No linked competition season found" };
+    }
+
+    // Fetch a sample of season stats
+    const seasonStats = await StatsBomb.fetchSeasonPlayerStats(
+      cs.statsbombCompetitionId,
+      cs.statsbombSeasonId
+    );
+
+    // Try to process the second player (first one already exists) to catch any error
+    const stat = seasonStats[1];
+
+    try {
+      // Check if player is linked
+      const externalId = await ctx.runQuery(
+        internal.ingest.statsbombIngest.getStatsBombExternalId,
+        { statsbombPlayerId: stat.player_id }
+      );
+
+      if (!externalId) {
+        return {
+          error: "Player not found in external IDs",
+          player_id: stat.player_id,
+          player_name: stat.player_name,
+        };
+      }
+
+      // Simple test - just call upsert with minimal data
+      const minutes = stat.player_season_minutes ?? 0;
+      const appearances = stat.player_season_appearances ?? 0;
+
+      // Try to upsert with minimal data (using schema-compatible field names)
+      const result = await ctx.runMutation(
+        internal.ingest.statsbombIngest.upsertSeasonAggregates,
+        {
+          playerId: externalId.playerId,
+          competitionId: cs.competitionId,
+          season: cs.season,
+          minutes: minutes,
+          appearances: appearances,
+          totals: { appearances: appearances, goals: 0 },  // totals requires appearances
+          per90: { goals: 0 },
+          additionalStats: {},
+          raw: stat,
+          features: {},
+        }
+      );
+
+      return {
+        success: true,
+        player: stat.player_name,
+        result,
+      };
+    } catch (error) {
+      return {
+        error: String(error),
+        player: stat.player_name,
+        player_id: stat.player_id,
+        stack: error instanceof Error ? error.stack : undefined,
+      };
+    }
+  },
+});
+
+// ============================================================================
+// Sample Data Export for Context Generation
+// ============================================================================
+
+/**
+ * Export sample data from all tables for context generation.
+ * Returns up to 20 records per table.
+ *
+ * Usage: npx convex run admin:exportSampleData --prod
+ */
+export const exportSampleData = query({
+  args: {},
+  handler: async (ctx) => {
+    const limit = 20;
+
+    // Helper to safely query and return sample data
+    const getSamples = async <T>(
+      tableName: string,
+      queryFn: () => Promise<T[]>
+    ): Promise<{ table: string; count: number; samples: T[] }> => {
+      try {
+        const samples = await queryFn();
+        return { table: tableName, count: samples.length, samples };
+      } catch {
+        return { table: tableName, count: 0, samples: [] };
+      }
+    };
+
+    // Query each table for sample data
+    const [
+      competitions,
+      teams,
+      players,
+      appearances,
+      playerRollingStats,
+      ratingProfiles,
+      playerRatings,
+      competitionRatings,
+      ingestionRuns,
+      playerExternalIds,
+      providerPlayerProfiles,
+      providerPlayerAggregates,
+      playerAiReports,
+      statsbombCompetitionSeasons,
+      statsbombMatches,
+      statsbombPlayerMappings,
+    ] = await Promise.all([
+      getSamples("competitions", () => ctx.db.query("competitions").take(limit)),
+      getSamples("teams", () => ctx.db.query("teams").take(limit)),
+      getSamples("players", () => ctx.db.query("players").take(limit)),
+      getSamples("appearances", () => ctx.db.query("appearances").take(limit)),
+      getSamples("playerRollingStats", () => ctx.db.query("playerRollingStats").take(limit)),
+      getSamples("ratingProfiles", () => ctx.db.query("ratingProfiles").take(limit)),
+      getSamples("playerRatings", () => ctx.db.query("playerRatings").take(limit)),
+      getSamples("competitionRatings", () => ctx.db.query("competitionRatings").take(limit)),
+      getSamples("ingestionRuns", () => ctx.db.query("ingestionRuns").take(limit)),
+      getSamples("playerExternalIds", () => ctx.db.query("playerExternalIds").take(limit)),
+      getSamples("providerPlayerProfiles", () => ctx.db.query("providerPlayerProfiles").take(limit)),
+      getSamples("providerPlayerAggregates", () => ctx.db.query("providerPlayerAggregates").take(limit)),
+      getSamples("playerAiReports", () => ctx.db.query("playerAiReports").take(limit)),
+      getSamples("statsbombCompetitionSeasons", () => ctx.db.query("statsbombCompetitionSeasons").take(limit)),
+      getSamples("statsbombMatches", () => ctx.db.query("statsbombMatches").take(limit)),
+      getSamples("statsbombPlayerMappings", () => ctx.db.query("statsbombPlayerMappings").take(limit)),
+    ]);
+
+    return {
+      exportedAt: new Date().toISOString(),
+      limit,
+      tables: [
+        competitions,
+        teams,
+        players,
+        appearances,
+        playerRollingStats,
+        ratingProfiles,
+        playerRatings,
+        competitionRatings,
+        ingestionRuns,
+        playerExternalIds,
+        providerPlayerProfiles,
+        providerPlayerAggregates,
+        playerAiReports,
+        statsbombCompetitionSeasons,
+        statsbombMatches,
+        statsbombPlayerMappings,
+      ],
+    };
   },
 });

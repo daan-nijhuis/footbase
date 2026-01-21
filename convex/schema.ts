@@ -26,7 +26,8 @@ export const providerValidator = v.union(
   v.literal("sofascore"),
   v.literal("thesportsdb"),
   v.literal("wikidata"),
-  v.literal("footballdata")
+  v.literal("footballdata"),
+  v.literal("statsbomb")
 );
 
 // Enrichment window type
@@ -360,6 +361,7 @@ export default defineSchema({
     playerId: v.id("players"),
     provider: providerValidator,
     competitionId: v.optional(v.id("competitions")),
+    teamId: v.optional(v.id("teams")), // For multi-team seasons (e.g., player transferred mid-season)
     window: enrichmentWindowValidator,
     fromDate: v.optional(v.string()),
     toDate: v.optional(v.string()),
@@ -379,9 +381,22 @@ export default defineSchema({
       progressivePasses: v.optional(v.number()),
       progressiveCarries: v.optional(v.number()),
       successfulPressures: v.optional(v.number()),
+      // OBV (On-Ball Value) from StatsBomb
+      obv: v.optional(v.number()),
+      obvPass: v.optional(v.number()),
+      obvShot: v.optional(v.number()),
+      obvDefensiveAction: v.optional(v.number()),
+      obvDribbleCarry: v.optional(v.number()),
+      obvGk: v.optional(v.number()),
     })),
+    // Raw provider response (for StatsBomb and other providers with wide stats)
+    raw: v.optional(v.any()),
+    // Extracted rating features (curated subset for rating computation)
+    features: v.optional(v.any()),
     fetchedAt: v.number(),
-  }).index("by_player_provider_window", ["playerId", "provider", "window"]),
+  })
+    .index("by_player_provider_window", ["playerId", "provider", "window"])
+    .index("by_player_provider_season_team", ["playerId", "provider", "season", "teamId"]),
 
   // Provider player match stats (per-match stats from enrichment providers)
   providerPlayerMatchStats: defineTable({
@@ -404,10 +419,17 @@ export default defineSchema({
       interceptions: v.optional(v.number()),
       // Add more as needed
     }),
+    // Provider-specific match ID (e.g., StatsBomb match_id)
+    providerMatchId: v.optional(v.string()),
+    // Raw provider response (for StatsBomb and other providers with wide stats)
+    raw: v.optional(v.any()),
+    // Extracted rating features (curated subset for rating computation)
+    features: v.optional(v.any()),
     fetchedAt: v.number(),
   })
     .index("by_provider_match_player", ["provider", "matchKey", "playerId"])
-    .index("by_player_date", ["playerId", "matchDate"]),
+    .index("by_player_date", ["playerId", "matchDate"])
+    .index("by_provider_matchId_player", ["provider", "providerMatchId", "playerId"]),
 
   // Enrichment state for resumable operations
   enrichmentState: defineTable({
@@ -550,4 +572,85 @@ export default defineSchema({
   })
     .index("by_customId", ["customId"])
     .index("by_processed", ["processed"]),
+
+  // ============================================================================
+  // StatsBomb Integration Tables
+  // ============================================================================
+
+  // StatsBomb competition-seasons for sync tracking
+  statsbombCompetitionSeasons: defineTable({
+    statsbombCompetitionId: v.number(),
+    statsbombSeasonId: v.number(),
+    competitionId: v.optional(v.id("competitions")), // Link to canonical competition
+    name: v.string(),
+    country: v.string(),
+    season: v.string(), // e.g., "2025/2026"
+    matchCount: v.optional(v.number()),
+    matchUpdated: v.optional(v.string()), // ISO timestamp from API for change detection
+    matchAvailable: v.optional(v.string()), // ISO timestamp for last available match data
+    syncStatus: v.union(
+      v.literal("pending"),
+      v.literal("syncing"),
+      v.literal("synced"),
+      v.literal("error")
+    ),
+    lastSyncedAt: v.optional(v.number()),
+    lastError: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_statsbomb_ids", ["statsbombCompetitionId", "statsbombSeasonId"])
+    .index("by_sync_status", ["syncStatus"])
+    .index("by_competition", ["competitionId"]),
+
+  // StatsBomb matches for incremental sync tracking
+  statsbombMatches: defineTable({
+    statsbombMatchId: v.number(),
+    competitionSeasonId: v.id("statsbombCompetitionSeasons"),
+    matchDate: v.string(), // YYYY-MM-DD
+    kickOff: v.optional(v.string()), // HH:MM:SS
+    homeTeamName: v.string(),
+    awayTeamName: v.string(),
+    homeTeamId: v.optional(v.number()), // StatsBomb team ID
+    awayTeamId: v.optional(v.number()), // StatsBomb team ID
+    homeScore: v.optional(v.number()),
+    awayScore: v.optional(v.number()),
+    status: v.string(), // "scheduled", "available", etc.
+    lastUpdated: v.optional(v.string()), // ISO timestamp from API for change detection
+    // Sync state flags
+    lineupsIngested: v.boolean(),
+    playerStatsIngested: v.boolean(),
+    teamStatsIngested: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_statsbomb_match", ["statsbombMatchId"])
+    .index("by_competition_season", ["competitionSeasonId", "matchDate"])
+    .index("by_pending_player_stats", ["playerStatsIngested", "status"])
+    .index("by_pending_lineups", ["lineupsIngested", "status"]),
+
+  // StatsBomb player mappings (from /api/v1/player-mapping endpoint)
+  statsbombPlayerMappings: defineTable({
+    statsbombPlayerId: v.number(), // offline_player_id
+    livePlayerId: v.optional(v.number()), // live_player_id for live matches
+    sbPlayerId: v.optional(v.number()), // sb_player_id (canonical StatsBomb ID)
+    playerName: v.string(),
+    playerNickname: v.optional(v.string()),
+    // Bio fields from player-mapping endpoint
+    birthDate: v.optional(v.string()),
+    heightCm: v.optional(v.number()),
+    weightKg: v.optional(v.number()),
+    countryId: v.optional(v.number()),
+    countryName: v.optional(v.string()),
+    // External ID mappings from StatsBomb
+    externalMappings: v.optional(v.array(v.object({
+      provider: v.string(),
+      providerId: v.string(),
+    }))),
+    // Link to canonical player (once resolved)
+    playerId: v.optional(v.id("players")),
+    cachedAt: v.number(),
+  })
+    .index("by_statsbomb_id", ["statsbombPlayerId"])
+    .index("by_player", ["playerId"]),
 });

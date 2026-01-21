@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from "react";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, Mail, Lock, User, ArrowRight, CheckCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -41,7 +40,8 @@ function LoginPage() {
       hasRedirected.current = true;
       router.navigate({ to: "/" });
     }
-  }, [session, router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -162,79 +162,42 @@ function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-background">
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, ease: "easeOut" }}
-        className="w-full max-w-md"
-      >
+      <div className="w-full max-w-md">
         <Card className="border-border/50 shadow-lg">
           <CardHeader className="text-center pb-2">
-            <motion.div
-              initial={{ scale: 0.9 }}
-              animate={{ scale: 1 }}
-              transition={{ delay: 0.1, duration: 0.3 }}
-            >
-              <div className="mx-auto h-12 w-12 rounded-xl bg-primary flex items-center justify-center mb-4">
-                <span className="text-primary-foreground font-bold text-2xl">F</span>
-              </div>
-            </motion.div>
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={mode}
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 10 }}
-                transition={{ duration: 0.2 }}
-              >
-                <CardTitle className="text-2xl font-bold">
-                  {mode === "login" ? "Welkom terug" : "Account aanmaken"}
-                </CardTitle>
-                <CardDescription className="mt-2">
-                  {mode === "login"
-                    ? "Log in om door te gaan naar Footbase"
-                    : "Maak een account aan om te beginnen"}
-                </CardDescription>
-              </motion.div>
-            </AnimatePresence>
+            <div className="mx-auto h-12 w-12 rounded-xl bg-primary flex items-center justify-center mb-4">
+              <span className="text-primary-foreground font-bold text-2xl">F</span>
+            </div>
+            <CardTitle className="text-2xl font-bold">
+              {mode === "login" ? "Welkom terug" : "Account aanmaken"}
+            </CardTitle>
+            <CardDescription className="mt-2">
+              {mode === "login"
+                ? "Log in om door te gaan naar Footbase"
+                : "Maak een account aan om te beginnen"}
+            </CardDescription>
           </CardHeader>
           <CardContent className="pt-4">
             <form onSubmit={handleSubmit} className="space-y-4">
-              <AnimatePresence mode="wait">
-                {mode === "signup" && (
-                  <motion.div
-                    key="name-field"
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.2 }}
-                    className="overflow-hidden"
-                  >
-                    <div className="space-y-2">
-                      <Label htmlFor="name">Naam</Label>
-                      <div className="relative">
-                        <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input
-                          id="name"
-                          type="text"
-                          placeholder="Je naam"
-                          value={name}
-                          onChange={(e) => setName(e.target.value)}
-                          className="pl-10"
-                          required={mode === "signup"}
-                        />
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+              {mode === "signup" && (
+                <div className="space-y-2">
+                  <Label htmlFor="name">Naam</Label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="name"
+                      type="text"
+                      placeholder="Je naam"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className="pl-10"
+                      required={mode === "signup"}
+                    />
+                  </div>
+                </div>
+              )}
 
-              <motion.div
-                className="space-y-2"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.1 }}
-              >
+              <div className="space-y-2">
                 <Label htmlFor="email">E-mail</Label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -248,14 +211,9 @@ function LoginPage() {
                     required
                   />
                 </div>
-              </motion.div>
+              </div>
 
-              <motion.div
-                className="space-y-2"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.15 }}
-              >
+              <div className="space-y-2">
                 <Label htmlFor="password">Wachtwoord</Label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -270,74 +228,39 @@ function LoginPage() {
                     minLength={8}
                   />
                 </div>
-              </motion.div>
+              </div>
 
-              <AnimatePresence mode="wait">
-                {error && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm"
-                  >
-                    {error}
-                  </motion.div>
-                )}
-              </AnimatePresence>
+              {error && (
+                <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
+                  {error}
+                </div>
+              )}
 
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.2 }}
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={isLoading || success}
               >
-                <Button
-                  type="submit"
-                  className="w-full relative overflow-hidden"
-                  disabled={isLoading || success}
-                >
-                  <AnimatePresence mode="wait">
-                    {success ? (
-                      <motion.span
-                        key="success"
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        className="flex items-center gap-2"
-                      >
-                        <CheckCircle className="h-4 w-4" />
-                        Gelukt!
-                      </motion.span>
-                    ) : isLoading ? (
-                      <motion.span
-                        key="loading"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        className="flex items-center gap-2"
-                      >
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Even geduld...
-                      </motion.span>
-                    ) : (
-                      <motion.span
-                        key="idle"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        className="flex items-center gap-2"
-                      >
-                        {mode === "login" ? "Inloggen" : "Account aanmaken"}
-                        <ArrowRight className="h-4 w-4" />
-                      </motion.span>
-                    )}
-                  </AnimatePresence>
-                </Button>
-              </motion.div>
+                {success ? (
+                  <span className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4" />
+                    Gelukt!
+                  </span>
+                ) : isLoading ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Even geduld...
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-2">
+                    {mode === "login" ? "Inloggen" : "Account aanmaken"}
+                    <ArrowRight className="h-4 w-4" />
+                  </span>
+                )}
+              </Button>
             </form>
 
-            <motion.div
-              className="mt-6 text-center text-sm text-muted-foreground"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.25 }}
-            >
+            <div className="mt-6 text-center text-sm text-muted-foreground">
               {mode === "login" ? (
                 <>
                   Nog geen account?{" "}
@@ -361,10 +284,10 @@ function LoginPage() {
                   </button>
                 </>
               )}
-            </motion.div>
+            </div>
           </CardContent>
         </Card>
-      </motion.div>
+      </div>
     </div>
   );
 }

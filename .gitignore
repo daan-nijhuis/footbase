@@ -18,3 +18,4 @@ todos.json
 # Convex - keep _generated for TypeScript types
 # convex/_generated
 .vercel
+.sample-data-cache.json

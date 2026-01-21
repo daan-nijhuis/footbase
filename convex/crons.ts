@@ -29,6 +29,25 @@ crons.daily(
 );
 
 /**
+ * StatsBomb daily sync job
+ *
+ * Runs daily at 06:00 UTC (after API-Football ingestion)
+ * 1. Syncs competition-seasons from StatsBomb catalog
+ * 2. Syncs match lists for active competition-seasons
+ * 3. Ingests player stats for matches with new/updated data
+ *
+ * Licensed competitions: Eredivisie, Keuken Kampioen Divisie, Bundesliga,
+ * Jupiler Pro League, Danish Superliga
+ *
+ * Budget: ~200 requests (configurable via INGESTION_BUDGET)
+ */
+crons.daily(
+  "daily-statsbomb-sync",
+  { hourUTC: 6, minuteUTC: 0 },
+  internal.ingest.statsbombIngest.runDailySync
+);
+
+/**
  * Daily AI report generation job
  *
  * Runs daily at 05:00 UTC (after ingestion completes)

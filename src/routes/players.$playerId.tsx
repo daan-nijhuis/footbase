@@ -12,6 +12,8 @@ import { PositionBadge } from "@/components/app/PositionBadge";
 import { RatingDisplay } from "@/components/app/RatingDisplay";
 import { StatsCard, StatHighlight } from "@/components/app/StatsCard";
 import { PlayerAiReport } from "@/components/app/PlayerAiReport";
+import { DataSourceBadge } from "@/components/app/DataSourceBadge";
+import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Calendar, Clock, MapPin, User } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -198,6 +200,9 @@ function PlayerProfilePage() {
                   <span className="text-sm text-muted-foreground">
                     {player.position}
                   </span>
+                  {player.stats?.dataSource && (
+                    <DataSourceBadge source={player.stats.dataSource} />
+                  )}
                 </div>
 
                 <Separator className="my-4" />
@@ -323,6 +328,64 @@ function PlayerProfilePage() {
                       suffix={stat.suffix}
                     />
                   ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* StatsBomb Advanced Stats */}
+          {player.statsbombStats && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  Geavanceerde Statistieken
+                  <Badge variant="statsbomb" className="text-xs">StatsBomb</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {/* OBV (On-Ball Value) */}
+                  <StatHighlight
+                    label="OBV"
+                    value={player.statsbombStats.obvPer90?.toFixed(2)}
+                    suffix="/90"
+                  />
+                  {/* Progressive Actions */}
+                  <StatHighlight
+                    label="Prog. Passes"
+                    value={player.statsbombStats.progressivePassesPer90?.toFixed(1)}
+                    suffix="/90"
+                  />
+                  <StatHighlight
+                    label="Prog. Carries"
+                    value={player.statsbombStats.progressiveCarriesPer90?.toFixed(1)}
+                    suffix="/90"
+                  />
+                  {/* Pressure */}
+                  <StatHighlight
+                    label="Pressures"
+                    value={player.statsbombStats.pressuresPer90?.toFixed(1)}
+                    suffix="/90"
+                  />
+                  {/* Creating */}
+                  <StatHighlight
+                    label="SCA"
+                    value={player.statsbombStats.shotCreatingActionsPer90?.toFixed(1)}
+                    suffix="/90"
+                  />
+                  <StatHighlight
+                    label="GCA"
+                    value={player.statsbombStats.goalCreatingActionsPer90?.toFixed(1)}
+                    suffix="/90"
+                  />
+                  {/* Success Rates */}
+                  {player.statsbombStats.pressureSuccessRate !== undefined && (
+                    <StatHighlight
+                      label="Pressure %"
+                      value={(player.statsbombStats.pressureSuccessRate * 100).toFixed(0)}
+                      suffix="%"
+                    />
+                  )}
                 </div>
               </CardContent>
             </Card>

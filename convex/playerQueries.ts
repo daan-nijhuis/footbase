@@ -3,6 +3,10 @@ import { query } from "./_generated/server";
 import { positionGroupValidator, tierValidator } from "./schema";
 import { requireAuth } from "./lib/auth";
 import type { Doc, Id } from "./_generated/dataModel";
+import {
+  type StatsBombExtractedFeatures,
+  type StatsBombPer90Features,
+} from "./ratings/statsbombFeatures";
 
 // Window type for rating selection
 const windowValidator = v.union(v.literal("365"), v.literal("last5"));
@@ -301,10 +305,67 @@ export const get = query({
       .filter((q) => q.eq(q.field("playerId"), args.playerId))
       .collect();
 
-    // Extract xG/xA from provider aggregates (prefer FotMob for xG data)
-    const fotmobAgg = providerAggregates.find((a) => a.provider === "fotmob" && a.window === "career");
-    const sofascoreAgg = providerAggregates.find((a) => a.provider === "sofascore" && a.window === "career");
-    const xGData = fotmobAgg?.additionalStats || sofascoreAgg?.additionalStats;
+    // Provider preference: StatsBomb > FotMob > SofaScore > API-Football
+    const statsbombAgg = providerAggregates.find(
+      (a) => a.provider === "statsbomb" && a.window === "season"
+    );
+    const fotmobAgg = providerAggregates.find(
+      (a) => a.provider === "fotmob" && a.window === "career"
+    );
+    const sofascoreAgg = providerAggregates.find(
+      (a) => a.provider === "sofascore" && a.window === "career"
+    );
+
+    // Use best available aggregate for xG/xA data
+    const primaryAggregate = statsbombAgg || fotmobAgg || sofascoreAgg;
+    const xGData = primaryAggregate?.additionalStats;
+
+    // Determine data source
+    const dataSource = statsbombAgg
+      ? "statsbomb"
+      : fotmobAgg
+        ? "fotmob"
+        : sofascoreAgg
+          ? "sofascore"
+          : "apiFootball";
+
+    // Extract StatsBomb features if available
+    // Note: For season aggregates, features already contain per-90 values from the API
+    // so we use them directly instead of calling normalizeToPer90
+    const statsbombFeatures = statsbombAgg?.features as
+      | StatsBombExtractedFeatures
+      | undefined;
+    // Use the stored per90 field directly since season stats are already per-90
+    const statsbombStoredPer90 = statsbombAgg?.per90 as Record<string, number | undefined> | undefined;
+    // Map stored per90 to StatsBombPer90Features format
+    const statsbombPer90 = statsbombFeatures ? {
+      minutes: statsbombFeatures.minutes,
+      // Use stored per90 values directly
+      xGPer90: statsbombStoredPer90?.xG,
+      npxGPer90: statsbombFeatures.npxG,
+      shotsPer90: statsbombFeatures.shots,
+      goalsPer90: statsbombFeatures.goals,
+      xAPer90: statsbombStoredPer90?.xA,
+      progressivePassesPer90: statsbombFeatures.progressivePasses,
+      progressiveCarriesPer90: statsbombFeatures.progressiveCarries,
+      tacklesPer90: statsbombFeatures.tackles,
+      interceptionsPer90: statsbombFeatures.interceptions,
+      blocksPer90: statsbombFeatures.blocks,
+      clearancesPer90: statsbombFeatures.clearances,
+      pressuresPer90: statsbombFeatures.pressures,
+      pressuresSuccessfulPer90: statsbombFeatures.pressuresSuccessful,
+      shotCreatingActionsPer90: statsbombFeatures.shotCreatingActions,
+      goalCreatingActionsPer90: statsbombFeatures.goalCreatingActions,
+      // Rates (already normalized)
+      pressureSuccessRate: statsbombFeatures.pressureSuccessRate,
+      // OBV values are already per-90 from API
+      obvPer90: statsbombFeatures.obv,
+      obvPassPer90: statsbombFeatures.obvPass,
+      obvShotPer90: statsbombFeatures.obvShot,
+      obvDefensiveActionPer90: statsbombFeatures.obvDefensiveAction,
+      obvDribbleCarryPer90: statsbombFeatures.obvDribbleCarry,
+      obvGkPer90: statsbombFeatures.obvGk,
+    } : null;
 
     return {
       _id: player._id,
@@ -335,16 +396,18 @@ export const get = query({
             tier: competition.tier ?? compRating?.tier,
           }
         : null,
-      stats: rollingStats
-        ? {
-            minutes: rollingStats.minutes,
-            fromDate: rollingStats.fromDate,
-            toDate: rollingStats.toDate,
-            totals: rollingStats.totals,
-            per90: rollingStats.per90,
-            last5: rollingStats.last5,
-          }
-        : null,
+      stats: {
+        // Prefer StatsBomb minutes if available, otherwise use rolling stats
+        minutes: statsbombAgg?.minutes ?? rollingStats?.minutes ?? 0,
+        fromDate: rollingStats?.fromDate ?? null,
+        toDate: rollingStats?.toDate ?? null,
+        // Prefer StatsBomb totals/per90 if available
+        totals: statsbombAgg?.totals ?? rollingStats?.totals ?? null,
+        per90: statsbombPer90 ?? rollingStats?.per90 ?? null,
+        last5: rollingStats?.last5 ?? null,
+        // Track which provider supplied the primary stats
+        dataSource,
+      },
       rating: rating
         ? {
             rating365: rating.rating365,
@@ -353,7 +416,7 @@ export const get = query({
             tier: rating.tier,
           }
         : null,
-      // xG/xA from enrichment providers
+      // xG/xA from enrichment providers (StatsBomb > FotMob > SofaScore)
       advancedStats: xGData
         ? {
             xG: xGData.xG,
@@ -361,6 +424,34 @@ export const get = query({
             xGPer90: xGData.xGPer90,
             xAPer90: xGData.xAPer90,
             npxG: xGData.npxG,
+            dataSource: primaryAggregate?.provider ?? null,
+          }
+        : null,
+      // StatsBomb-specific advanced stats (OBV, progressive actions, etc.)
+      statsbombStats: statsbombFeatures
+        ? {
+            // On-Ball Value metrics
+            obv: statsbombFeatures.obv,
+            obvPer90: statsbombPer90?.obvPer90,
+            obvPass: statsbombFeatures.obvPass,
+            obvShot: statsbombFeatures.obvShot,
+            obvDefensiveAction: statsbombFeatures.obvDefensiveAction,
+            obvDribbleCarry: statsbombFeatures.obvDribbleCarry,
+            // Progressive actions
+            progressivePasses: statsbombFeatures.progressivePasses,
+            progressivePassesPer90: statsbombPer90?.progressivePassesPer90,
+            progressiveCarries: statsbombFeatures.progressiveCarries,
+            progressiveCarriesPer90: statsbombPer90?.progressiveCarriesPer90,
+            // Pressure stats
+            pressures: statsbombFeatures.pressures,
+            pressuresPer90: statsbombPer90?.pressuresPer90,
+            pressuresSuccessful: statsbombFeatures.pressuresSuccessful,
+            pressureSuccessRate: statsbombFeatures.pressureSuccessRate,
+            // Creating
+            shotCreatingActions: statsbombFeatures.shotCreatingActions,
+            shotCreatingActionsPer90: statsbombPer90?.shotCreatingActionsPer90,
+            goalCreatingActions: statsbombFeatures.goalCreatingActions,
+            goalCreatingActionsPer90: statsbombPer90?.goalCreatingActionsPer90,
           }
         : null,
       recentAppearances: appearances.map((app) => ({

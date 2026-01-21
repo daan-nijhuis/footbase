@@ -11,28 +11,38 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
+import { execSync } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, '..');
 const OUTPUT_FILE = path.join(ROOT_DIR, 'CODEBASE_CONTEXT.md');
 
-// Files to always include (relative to root)
-const PRIORITY_FILES = [
+// Priority patterns - files matching these are placed first in output
+const PRIORITY_PATTERNS = [
   'package.json',
-  'convex/schema.ts',
-  'src/lib/convex.ts',
-  'src/lib/providers.tsx',
-  'src/router.tsx',
-  'src/routes/__root.tsx',
+  '**/schema.ts',
+  '**/convex.ts',
+  '**/providers.tsx',
+  '**/router.tsx',
+  '**/__root.tsx',
 ];
 
 // Directories to scan for important files
+// Each entry can specify include patterns and exclude patterns
 const SCAN_DIRS = [
+  // Backend - all Convex code (automatically includes all subfolders)
   { dir: 'convex', include: ['*.ts'], exclude: ['_generated/**', 'tsconfig.json'] },
+  // Frontend routes
   { dir: 'src/routes', include: ['*.tsx'], exclude: [] },
+  // App-specific components (business logic)
   { dir: 'src/components/app', include: ['*.tsx'], exclude: [] },
+  // Standalone components outside /app and /ui
+  { dir: 'src/components', include: ['*.tsx'], exclude: ['app/**', 'ui/**'] },
+  // Frontend utilities
   { dir: 'src/lib', include: ['*.ts', '*.tsx'], exclude: [] },
+  // Scripts (for reference)
+  { dir: 'scripts', include: ['*.ts'], exclude: [] },
 ];
 
 // Patterns to always exclude
@@ -50,6 +60,7 @@ const GLOBAL_EXCLUDES = [
   '*.map',
   '*.d.ts',
   'routeTree.gen.ts',
+  '.sample-data-cache.json',
 ];
 
 // UI component files to exclude (standard primitives)
@@ -141,22 +152,106 @@ function scanDirectory(dirPath: string, patterns: string[], excludePatterns: str
   return results;
 }
 
+// Emoji mappings for known folder patterns
+const FOLDER_EMOJIS: Record<string, string> = {
+  'providers': '🔌',
+  'ingest': '📥',
+  'ratings': '⭐',
+  'enrichment': '✨',
+  'merge': '🔀',
+  'resolve': '🔍',
+  'admin': '🔧',
+  'lib': '📚',
+  'ai': '🤖',
+  'validation': '✅',
+  'analytics': '📈',
+  'notifications': '🔔',
+  'cache': '💾',
+  'jobs': '⏰',
+  'webhooks': '🪝',
+  'migrations': '🔄',
+};
+
+// Get emoji for a folder name (with fallback)
+function getFolderEmoji(folderName: string): string {
+  return FOLDER_EMOJIS[folderName] || '📁';
+}
+
+// Dynamically build category name for convex subfolders
+function buildConvexCategoryName(folderName: string): string {
+  const emoji = getFolderEmoji(folderName);
+  const description = FOLDER_DESCRIPTIONS[folderName] || folderName.charAt(0).toUpperCase() + folderName.slice(1);
+  return `${emoji} ${description}`;
+}
+
+// Category mappings - maps folder patterns to category names
+// Order matters: more specific patterns should come first
+const STATIC_CATEGORY_MAPPINGS: Array<{ pattern: string | RegExp; category: string }> = [
+  // Specific file patterns
+  { pattern: 'package.json', category: '📦 Dependencies' },
+  { pattern: /convex\/schema\.ts$/, category: '🗄️ Database Schema' },
+  { pattern: /Queries\.ts$/, category: '📊 Database Queries' },
+
+  // Root config files
+  { pattern: /^(tsconfig|vite\.config|tailwind\.config|postcss\.config|eslint\.config)/, category: '⚙️ Configuration' },
+
+  // Catch-all for convex root files (subfolders handled dynamically)
+  { pattern: /^convex\/[^/]+$/, category: '⚙️ Backend Logic' },
+
+  // Frontend patterns
+  { pattern: /^src\/routes\//, category: '🛤️ Routes & Pages' },
+  { pattern: /^src\/components\/app\//, category: '🧩 App Components' },
+  { pattern: /^src\/components\//, category: '🧩 Components' },
+  { pattern: /^src\/lib\//, category: '🔧 Frontend Utilities' },
+
+  // Scripts
+  { pattern: /^scripts\//, category: '📜 Scripts' },
+];
+
+// Build dynamic category mappings based on discovered convex subfolders
+function buildCategoryMappings(): Array<{ pattern: string | RegExp; category: string }> {
+  const dynamicMappings: Array<{ pattern: string | RegExp; category: string }> = [];
+
+  // Discover convex subfolders and create mappings for them
+  const convexSubdirs = discoverSubdirs('convex');
+  for (const subdir of convexSubdirs) {
+    const pattern = new RegExp(`^convex/${subdir}/`);
+    const category = buildConvexCategoryName(subdir);
+    dynamicMappings.push({ pattern, category });
+  }
+
+  // Combine static and dynamic mappings (static first for priority)
+  return [
+    ...STATIC_CATEGORY_MAPPINGS.slice(0, 3), // package.json, schema.ts, Queries.ts
+    ...dynamicMappings, // All convex subfolders
+    ...STATIC_CATEGORY_MAPPINGS.slice(3), // Rest of static mappings
+  ];
+}
+
+// Memoize category mappings (built once on first use)
+let cachedCategoryMappings: Array<{ pattern: string | RegExp; category: string }> | null = null;
+
+function getCategoryMappings(): Array<{ pattern: string | RegExp; category: string }> {
+  if (!cachedCategoryMappings) {
+    cachedCategoryMappings = buildCategoryMappings();
+  }
+  return cachedCategoryMappings;
+}
+
 function categorizeFile(relativePath: string): string {
-  if (relativePath === 'package.json') return '📦 Dependencies';
-  if (relativePath === 'convex/schema.ts') return '🗄️ Database Schema';
-  if (relativePath.startsWith('convex/providers/')) return '🔌 External Providers';
-  if (relativePath.startsWith('convex/ingest/')) return '📥 Data Ingestion';
-  if (relativePath.startsWith('convex/ratings/')) return '⭐ Rating System';
-  if (relativePath.startsWith('convex/enrichment/')) return '✨ Data Enrichment';
-  if (relativePath.startsWith('convex/merge/')) return '🔀 Player Merging';
-  if (relativePath.startsWith('convex/resolve/')) return '🔍 Player Resolution';
-  if (relativePath.startsWith('convex/admin/')) return '🔧 Admin Utilities';
-  if (relativePath.startsWith('convex/lib/')) return '📚 Backend Utilities';
-  if (relativePath.startsWith('convex/') && relativePath.endsWith('Queries.ts')) return '📊 Database Queries';
-  if (relativePath.startsWith('convex/')) return '⚙️ Backend Logic';
-  if (relativePath.startsWith('src/routes/')) return '🛤️ Routes & Pages';
-  if (relativePath.startsWith('src/components/app/')) return '🧩 App Components';
-  if (relativePath.startsWith('src/lib/')) return '🔧 Frontend Utilities';
+  const normalizedPath = relativePath.replace(/\\/g, '/');
+  const mappings = getCategoryMappings();
+
+  for (const { pattern, category } of mappings) {
+    if (typeof pattern === 'string') {
+      if (normalizedPath === pattern || normalizedPath.endsWith(`/${pattern}`)) {
+        return category;
+      }
+    } else if (pattern.test(normalizedPath)) {
+      return category;
+    }
+  }
+
   return '📄 Other';
 }
 
@@ -176,30 +271,183 @@ function getLanguage(filePath: string): string {
   return '';
 }
 
+// Auto-discover subdirectories for dynamic tree generation
+function discoverSubdirs(baseDir: string): string[] {
+  const absoluteDir = path.join(ROOT_DIR, baseDir);
+  if (!fs.existsSync(absoluteDir)) return [];
+
+  const entries = fs.readdirSync(absoluteDir, { withFileTypes: true });
+  return entries
+    .filter(e => e.isDirectory() && !e.name.startsWith('_') && !e.name.startsWith('.'))
+    .map(e => e.name)
+    .sort();
+}
+
+// Category descriptions for known folder patterns
+const FOLDER_DESCRIPTIONS: Record<string, string> = {
+  'convex': 'Convex serverless backend',
+  'providers': 'External API integrations',
+  'ingest': 'Data ingestion pipelines',
+  'ratings': 'Player rating computation',
+  'enrichment': 'Data enrichment logic',
+  'merge': 'Player merging logic',
+  'resolve': 'Player resolution',
+  'ai': 'AI & report generation',
+  'admin': 'Admin utilities',
+  'lib': 'Shared utilities',
+  'src': 'React frontend',
+  'routes': 'TanStack Router pages',
+  'components': 'React components',
+  'app': 'Business logic components',
+  'ui': 'UI primitives',
+  'scripts': 'Build & utility scripts',
+};
+
+function getDescription(folderName: string): string {
+  return FOLDER_DESCRIPTIONS[folderName] || folderName;
+}
+
 function generateDirectoryTree(): string {
   const tree: string[] = ['```'];
   tree.push('Footbase/');
 
-  const showDirs = [
-    ['convex/', 'Convex serverless backend'],
-    ['  providers/', 'External API integrations'],
-    ['  ingest/', 'Data ingestion pipelines'],
-    ['  ratings/', 'Player rating computation'],
-    ['  enrichment/', 'Data enrichment logic'],
-    ['  merge/', 'Player merging logic'],
-    ['  resolve/', 'Player resolution'],
-    ['src/', 'React frontend'],
-    ['  routes/', 'TanStack Router pages'],
-    ['  components/app/', 'Business logic components'],
-    ['  lib/', 'Utilities & providers'],
-  ];
+  // Convex backend
+  tree.push(`├── convex/`.padEnd(30) + `# ${getDescription('convex')}`);
+  const convexSubdirs = discoverSubdirs('convex');
+  for (const subdir of convexSubdirs) {
+    tree.push(`│   ├── ${subdir}/`.padEnd(30) + `# ${getDescription(subdir)}`);
+  }
 
-  for (const [dir, desc] of showDirs) {
-    tree.push(`├── ${dir.padEnd(25)} # ${desc}`);
+  // Frontend
+  tree.push(`├── src/`.padEnd(30) + `# ${getDescription('src')}`);
+  tree.push(`│   ├── routes/`.padEnd(30) + `# ${getDescription('routes')}`);
+  tree.push(`│   ├── components/`.padEnd(30) + `# ${getDescription('components')}`);
+  tree.push(`│   │   ├── app/`.padEnd(30) + `# ${getDescription('app')}`);
+  tree.push(`│   │   └── ui/`.padEnd(30) + `# ${getDescription('ui')}`);
+  tree.push(`│   └── lib/`.padEnd(30) + `# ${getDescription('lib')}`);
+
+  // Scripts
+  if (fs.existsSync(path.join(ROOT_DIR, 'scripts'))) {
+    tree.push(`├── scripts/`.padEnd(30) + `# ${getDescription('scripts')}`);
   }
 
   tree.push('```');
   return tree.join('\n');
+}
+
+interface SampleTable {
+  table: string;
+  count: number;
+  samples: Record<string, unknown>[];
+}
+
+interface SampleDataExport {
+  exportedAt: string;
+  limit: number;
+  tables: SampleTable[];
+}
+
+const SAMPLE_DATA_CACHE_FILE = path.join(ROOT_DIR, '.sample-data-cache.json');
+
+/**
+ * Fetch sample data from Convex production database
+ * Falls back to cached file if Convex query fails
+ */
+function fetchSampleData(): SampleDataExport | null {
+  console.log('📊 Fetching sample data from Convex...');
+
+  try {
+    const result = execSync(
+      'npx convex run admin:exportSampleData --prod',
+      {
+        cwd: ROOT_DIR,
+        encoding: 'utf-8',
+        timeout: 60000, // 60 second timeout
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }
+    );
+
+    // Parse the JSON output
+    const data = JSON.parse(result.trim()) as SampleDataExport;
+    console.log(`✅ Fetched samples from ${data.tables.length} tables`);
+
+    // Cache the result for future runs
+    fs.writeFileSync(SAMPLE_DATA_CACHE_FILE, JSON.stringify(data, null, 2));
+
+    return data;
+  } catch (error) {
+    console.warn('⚠️  Could not fetch sample data from Convex');
+
+    // Try to load from cache
+    if (fs.existsSync(SAMPLE_DATA_CACHE_FILE)) {
+      console.log('📂 Loading sample data from cache...');
+      try {
+        const cached = JSON.parse(fs.readFileSync(SAMPLE_DATA_CACHE_FILE, 'utf-8')) as SampleDataExport;
+        console.log(`✅ Loaded cached samples from ${cached.exportedAt}`);
+        return cached;
+      } catch {
+        console.warn('   Cache file is invalid');
+      }
+    }
+
+    console.warn('   To enable sample data export:');
+    console.warn('   1. Fix any TypeScript errors in convex/');
+    console.warn('   2. Run: npx convex deploy');
+    console.warn('   3. Re-run this script');
+    return null;
+  }
+}
+
+/**
+ * Format sample data as markdown
+ */
+function formatSampleDataMarkdown(data: SampleDataExport): string {
+  const lines: string[] = [];
+
+  lines.push('## Database Sample Data');
+  lines.push('');
+  lines.push(`> Sample records from production database (up to ${data.limit} per table)`);
+  lines.push(`> Exported: ${data.exportedAt}`);
+  lines.push('');
+
+  for (const table of data.tables) {
+    if (table.count === 0) continue;
+
+    lines.push(`### \`${table.table}\` (${table.count} samples)`);
+    lines.push('');
+    lines.push('```json');
+
+    // Format each sample with truncation for very long fields
+    const truncatedSamples = table.samples.map(sample => {
+      const truncated: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(sample)) {
+        if (typeof value === 'string' && value.length > 200) {
+          truncated[key] = value.substring(0, 200) + '...';
+        } else if (typeof value === 'object' && value !== null) {
+          const str = JSON.stringify(value);
+          if (str.length > 300) {
+            truncated[key] = '[Object truncated]';
+          } else {
+            truncated[key] = value;
+          }
+        } else {
+          truncated[key] = value;
+        }
+      }
+      return truncated;
+    });
+
+    lines.push(JSON.stringify(truncatedSamples.slice(0, 5), null, 2)); // Show first 5 in detail
+
+    if (table.count > 5) {
+      lines.push(`\n// ... and ${table.count - 5} more records`);
+    }
+
+    lines.push('```');
+    lines.push('');
+  }
+
+  return lines.join('\n');
 }
 
 function handleEnvFile(): string | null {
@@ -235,36 +483,37 @@ function handleEnvFile(): string | null {
   return null;
 }
 
+function matchesPriorityPattern(relativePath: string): boolean {
+  const normalizedPath = relativePath.replace(/\\/g, '/');
+  for (const pattern of PRIORITY_PATTERNS) {
+    if (pattern.startsWith('**/')) {
+      const suffix = pattern.slice(3);
+      if (normalizedPath.endsWith(suffix) || normalizedPath.endsWith(`/${suffix}`)) {
+        return true;
+      }
+    } else if (normalizedPath === pattern || normalizedPath.endsWith(`/${pattern}`)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function main() {
   console.log('🚀 Exporting codebase context...\n');
 
   // Collect all files
-  const files: FileEntry[] = [];
+  const allFiles: FileEntry[] = [];
 
-  // Add priority files first
-  for (const file of PRIORITY_FILES) {
-    const absolutePath = path.join(ROOT_DIR, file);
-    if (fs.existsSync(absolutePath) && !shouldExclude(file)) {
-      const stats = fs.statSync(absolutePath);
-      files.push({
-        relativePath: file,
-        absolutePath,
-        category: categorizeFile(file),
-        size: stats.size,
-      });
-    }
-  }
-
-  // Scan directories
+  // Scan all configured directories
   for (const { dir, include, exclude } of SCAN_DIRS) {
     const scannedFiles = scanDirectory(dir, include, exclude);
     for (const file of scannedFiles) {
-      // Skip if already added as priority
-      if (files.some(f => f.relativePath === file)) continue;
+      // Skip duplicates
+      if (allFiles.some(f => f.relativePath === file)) continue;
 
       const absolutePath = path.join(ROOT_DIR, file);
       const stats = fs.statSync(absolutePath);
-      files.push({
+      allFiles.push({
         relativePath: file,
         absolutePath,
         category: categorizeFile(file),
@@ -272,6 +521,29 @@ function main() {
       });
     }
   }
+
+  // Add root-level config files
+  const rootConfigFiles = ['package.json', 'tsconfig.json', 'vite.config.ts', 'tailwind.config.ts'];
+  for (const file of rootConfigFiles) {
+    const absolutePath = path.join(ROOT_DIR, file);
+    if (fs.existsSync(absolutePath) && !allFiles.some(f => f.relativePath === file)) {
+      const stats = fs.statSync(absolutePath);
+      allFiles.push({
+        relativePath: file,
+        absolutePath,
+        category: categorizeFile(file),
+        size: stats.size,
+      });
+    }
+  }
+
+  // Sort: priority files first, then alphabetically within categories
+  const files = allFiles.sort((a, b) => {
+    const aPriority = matchesPriorityPattern(a.relativePath) ? 0 : 1;
+    const bPriority = matchesPriorityPattern(b.relativePath) ? 0 : 1;
+    if (aPriority !== bPriority) return aPriority - bPriority;
+    return a.relativePath.localeCompare(b.relativePath);
+  });
 
   // Group files by category
   const grouped = new Map<string, FileEntry[]>();
@@ -281,25 +553,30 @@ function main() {
     grouped.set(file.category, existing);
   }
 
-  // Sort categories in logical order
-  const categoryOrder = [
+  // Build category order dynamically
+  // Start with priority categories, then add discovered convex folder categories, then frontend
+  const priorityCategories = [
+    '⚙️ Configuration',
     '📦 Dependencies',
     '🗄️ Database Schema',
     '📊 Database Queries',
     '⚙️ Backend Logic',
-    '🔌 External Providers',
-    '📥 Data Ingestion',
-    '⭐ Rating System',
-    '✨ Data Enrichment',
-    '🔀 Player Merging',
-    '🔍 Player Resolution',
-    '🔧 Admin Utilities',
-    '📚 Backend Utilities',
+  ];
+
+  // Get all categories from convex subfolders (sorted alphabetically for consistency)
+  const convexSubdirs = discoverSubdirs('convex');
+  const convexCategories = convexSubdirs.map(buildConvexCategoryName).sort();
+
+  const frontendCategories = [
     '🛤️ Routes & Pages',
     '🧩 App Components',
+    '🧩 Components',
     '🔧 Frontend Utilities',
+    '📜 Scripts',
     '📄 Other',
   ];
+
+  const categoryOrder = [...priorityCategories, ...convexCategories, ...frontendCategories];
 
   // Generate markdown
   const output: string[] = [];
@@ -349,6 +626,12 @@ function main() {
     output.push(envTemplate);
     output.push('```');
     output.push('');
+  }
+
+  // Add sample data from production database
+  const sampleData = fetchSampleData();
+  if (sampleData) {
+    output.push(formatSampleDataMarkdown(sampleData));
   }
 
   // Add file index

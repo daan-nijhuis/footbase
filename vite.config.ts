@@ -13,15 +13,6 @@ const config = defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
-  server: {
-    proxy: {
-      // Proxy auth requests to Convex in local development
-      '/api/auth': {
-        target: 'https://capable-salmon-323.convex.site',
-        changeOrigin: true,
-      },
-    },
-  },
   ssr: {
     noExternal: ['@convex-dev/better-auth'],
   },
@@ -30,6 +21,17 @@ const config = defineConfig({
     tailwindcss(),
     nitro({
       preset: 'vercel',
+      devProxy: {
+        '/api/auth': {
+          target: 'https://descriptive-kudu-712.convex.site/api/auth',
+          changeOrigin: true,
+        },
+      },
+      routeRules: {
+        '/api/auth/**': {
+          proxy: 'https://descriptive-kudu-712.convex.site/api/auth/**',
+        },
+      },
     }),
     // this is the plugin that enables path aliases
     viteTsConfigPaths({

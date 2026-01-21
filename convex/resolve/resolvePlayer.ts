@@ -13,7 +13,7 @@ import { DatabaseReader, DatabaseWriter, MutationCtx, QueryCtx } from "../_gener
 // Types
 // ============================================================================
 
-export type Provider = "apiFootball" | "fotmob" | "sofascore" | "thesportsdb" | "wikidata" | "footballdata";
+export type Provider = "apiFootball" | "fotmob" | "sofascore" | "thesportsdb" | "wikidata" | "footballdata" | "statsbomb";
 
 export interface ExternalPlayerData {
   provider: Provider;
@@ -516,4 +516,167 @@ export async function ensureNormalizedNames(
   }
 
   return updated;
+}
+
+// ============================================================================
+// StatsBomb-Specific Resolution
+// ============================================================================
+
+/**
+ * StatsBomb player data for resolution
+ */
+export interface StatsBombPlayerData {
+  statsbombPlayerId: number;
+  name: string;
+  nickname?: string | null;
+  birthDate?: string;
+  nationality?: string;
+  height?: number;
+  teamName?: string;
+}
+
+/**
+ * Resolve a StatsBomb player to a canonical player
+ *
+ * Uses multiple strategies:
+ * 1. Check if StatsBomb external ID already exists
+ * 2. Check StatsBomb player mapping table for existing link
+ * 3. Use standard name/DOB/nationality matching
+ *
+ * @param db - Database reader
+ * @param playerData - StatsBomb player data
+ * @param competitionId - Optional competition context
+ * @param teamId - Optional team context
+ */
+export async function resolveStatsBombPlayer(
+  db: DatabaseReader,
+  playerData: StatsBombPlayerData,
+  competitionId?: Id<"competitions">,
+  teamId?: Id<"teams">
+): Promise<ResolveResult> {
+  const providerPlayerId = String(playerData.statsbombPlayerId);
+
+  // Strategy 1: Check existing external ID mapping
+  const existingPlayerId = await findExistingExternalId(
+    db,
+    "statsbomb",
+    providerPlayerId
+  );
+
+  if (existingPlayerId) {
+    return {
+      playerId: existingPlayerId,
+      confidence: EXACT_MATCH_SCORE,
+      isNew: false,
+      reason: "existing_statsbomb_external_id",
+    };
+  }
+
+  // Strategy 2: Check StatsBomb player mappings table
+  const mapping = await db
+    .query("statsbombPlayerMappings")
+    .withIndex("by_statsbomb_id", (q) =>
+      q.eq("statsbombPlayerId", playerData.statsbombPlayerId)
+    )
+    .first();
+
+  if (mapping?.playerId) {
+    return {
+      playerId: mapping.playerId,
+      confidence: 0.95, // High confidence from mapping
+      isNew: false,
+      reason: "existing_statsbomb_mapping",
+    };
+  }
+
+  // Strategy 3: Standard resolution with StatsBomb data
+  const externalData: ExternalPlayerData = {
+    provider: "statsbomb",
+    providerPlayerId,
+    // Prefer nickname if available (often more recognizable)
+    name: playerData.nickname || playerData.name,
+    birthDate: playerData.birthDate,
+    nationality: playerData.nationality,
+    teamName: playerData.teamName,
+  };
+
+  const result = await resolvePlayer(db, externalData, competitionId, teamId);
+
+  // Enhance reason with StatsBomb context
+  if (result.playerId) {
+    return {
+      ...result,
+      reason: `statsbomb_${result.reason}`,
+    };
+  }
+
+  return result;
+}
+
+/**
+ * Link a StatsBomb player to a canonical player
+ * Creates the external ID mapping and updates the StatsBomb player mapping table
+ */
+export async function linkStatsBombPlayer(
+  db: DatabaseWriter,
+  statsbombPlayerId: number,
+  playerId: Id<"players">,
+  playerName: string,
+  confidence: number
+): Promise<void> {
+  const now = Date.now();
+  const providerPlayerId = String(statsbombPlayerId);
+
+  // Create external ID mapping
+  await upsertExternalId(db, playerId, "statsbomb", providerPlayerId, confidence);
+
+  // Update StatsBomb player mapping table
+  const existingMapping = await db
+    .query("statsbombPlayerMappings")
+    .withIndex("by_statsbomb_id", (q) =>
+      q.eq("statsbombPlayerId", statsbombPlayerId)
+    )
+    .first();
+
+  if (existingMapping) {
+    await db.patch(existingMapping._id, {
+      playerId,
+      playerName,
+      cachedAt: now,
+    });
+  } else {
+    await db.insert("statsbombPlayerMappings", {
+      statsbombPlayerId,
+      playerName,
+      playerId,
+      cachedAt: now,
+    });
+  }
+}
+
+/**
+ * Add a StatsBomb player to the review queue
+ */
+export async function addStatsBombToReviewQueue(
+  db: DatabaseWriter,
+  playerData: StatsBombPlayerData,
+  reason: string,
+  candidatePlayerIds?: Id<"players">[]
+): Promise<Id<"unresolvedExternalPlayers">> {
+  const externalData: ExternalPlayerData = {
+    provider: "statsbomb",
+    providerPlayerId: String(playerData.statsbombPlayerId),
+    name: playerData.nickname || playerData.name,
+    birthDate: playerData.birthDate,
+    nationality: playerData.nationality,
+    teamName: playerData.teamName,
+  };
+
+  return await addToReviewQueue(
+    db,
+    externalData,
+    playerData, // Store full StatsBomb data as payload
+    reason,
+    candidatePlayerIds
+  );
 }

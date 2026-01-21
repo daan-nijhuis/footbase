@@ -49,11 +49,13 @@ export interface MergeResult {
  * Provider precedence for each field.
  * Higher number = higher priority.
  * API-Football is our primary source, enrichment providers fill gaps.
+ * StatsBomb is highest quality for stats-related fields (licensed data).
  */
 export const FIELD_PRECEDENCE: Record<string, Record<Provider, number>> = {
   // Basic info - primary source is most trusted
   name: {
     apiFootball: 100,
+    statsbomb: 85, // Licensed data is reliable
     fotmob: 50,
     sofascore: 50,
     thesportsdb: 40,
@@ -62,6 +64,7 @@ export const FIELD_PRECEDENCE: Record<string, Record<Provider, number>> = {
   },
   birthDate: {
     apiFootball: 100,
+    statsbomb: 95, // Licensed data is very reliable
     wikidata: 90, // Wikipedia is reliable for birth dates
     sofascore: 80,
     fotmob: 80,
@@ -70,6 +73,7 @@ export const FIELD_PRECEDENCE: Record<string, Record<Provider, number>> = {
   },
   nationality: {
     apiFootball: 100,
+    statsbomb: 90, // Licensed data is reliable
     wikidata: 90,
     sofascore: 80,
     fotmob: 80,
@@ -80,6 +84,7 @@ export const FIELD_PRECEDENCE: Record<string, Record<Provider, number>> = {
   heightCm: {
     sofascore: 100,
     fotmob: 90,
+    statsbomb: 85, // StatsBomb includes height in lineups
     apiFootball: 80,
     thesportsdb: 70,
     wikidata: 60,
@@ -88,6 +93,7 @@ export const FIELD_PRECEDENCE: Record<string, Record<Provider, number>> = {
   weightKg: {
     sofascore: 100,
     fotmob: 90,
+    statsbomb: 85, // StatsBomb includes weight in lineups
     apiFootball: 80,
     thesportsdb: 70,
     wikidata: 60,
@@ -97,6 +103,7 @@ export const FIELD_PRECEDENCE: Record<string, Record<Provider, number>> = {
     sofascore: 100,
     fotmob: 90,
     apiFootball: 80,
+    statsbomb: 70, // StatsBomb doesn't specialize in this
     thesportsdb: 70,
     wikidata: 60,
     footballdata: 50,
@@ -109,10 +116,12 @@ export const FIELD_PRECEDENCE: Record<string, Record<Provider, number>> = {
     thesportsdb: 70,
     wikidata: 60,
     footballdata: 50,
+    statsbomb: 40, // StatsBomb doesn't provide photos
   },
   // Position - primary source is most accurate for current position
   position: {
     apiFootball: 100,
+    statsbomb: 95, // StatsBomb has detailed position data from lineups
     fotmob: 80,
     sofascore: 80,
     thesportsdb: 60,
@@ -121,11 +130,40 @@ export const FIELD_PRECEDENCE: Record<string, Record<Provider, number>> = {
   },
   positionGroup: {
     apiFootball: 100,
+    statsbomb: 95, // StatsBomb has detailed position data from lineups
     fotmob: 80,
     sofascore: 80,
     thesportsdb: 60,
     wikidata: 40,
     footballdata: 50,
+  },
+  // Stats fields - StatsBomb is highest quality for expected metrics
+  xG: {
+    statsbomb: 100, // StatsBomb xG is industry leading
+    sofascore: 80,
+    fotmob: 75,
+    apiFootball: 70,
+    thesportsdb: 50,
+    wikidata: 30,
+    footballdata: 40,
+  },
+  xA: {
+    statsbomb: 100, // StatsBomb xA is industry leading
+    sofascore: 80,
+    fotmob: 75,
+    apiFootball: 70,
+    thesportsdb: 50,
+    wikidata: 30,
+    footballdata: 40,
+  },
+  npxG: {
+    statsbomb: 100, // StatsBomb is authoritative for npxG
+    sofascore: 75,
+    fotmob: 70,
+    apiFootball: 60,
+    thesportsdb: 40,
+    wikidata: 20,
+    footballdata: 30,
   },
 };
 

@@ -285,4 +285,10 @@ export const RATE_LIMITS: Record<string, RateLimitConfig> = {
     requestsPerMinute: 10,
     minDelayMs: 6000,
   },
+  statsbomb: {
+    // StatsBomb allows 15,000 requests per 5 minutes (3,000/min)
+    // Using conservative 2,000/min to leave headroom
+    requestsPerMinute: 2000,
+    minDelayMs: 50, // Minimal delay due to generous rate limit
+  },
 };

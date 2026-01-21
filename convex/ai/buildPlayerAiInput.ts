@@ -69,6 +69,22 @@ export interface PlayerAiSnapshot {
     xA?: number;
     xGPer90?: number;
     xAPer90?: number;
+    dataSource?: string;
+  };
+
+  // StatsBomb-specific advanced features
+  statsbombStats?: {
+    // OBV (On-Ball Value)
+    obvPer90?: number;
+    // Progressive actions
+    progressivePassesPer90?: number;
+    progressiveCarriesPer90?: number;
+    // Pressure
+    pressuresPer90?: number;
+    pressureSuccessRate?: number;
+    // Creating
+    shotCreatingActionsPer90?: number;
+    goalCreatingActionsPer90?: number;
   };
 
   // Sources that contributed data
@@ -128,14 +144,56 @@ export const buildSnapshot = internalQuery({
       }
     }
 
-    // Extract xG/xA from provider aggregates (prefer FotMob for xG data)
+    // Provider preference: StatsBomb > FotMob > SofaScore
+    const statsbombAgg = providerAggregates.find(
+      (a) => a.provider === "statsbomb" && a.window === "season"
+    );
     const fotmobAgg = providerAggregates.find(
       (a) => a.provider === "fotmob" && a.window === "365"
     );
     const sofascoreAgg = providerAggregates.find(
       (a) => a.provider === "sofascore"
     );
-    const xGData = fotmobAgg?.additionalStats || sofascoreAgg?.additionalStats;
+
+    // Use best available for xG/xA
+    const primaryAggregate = statsbombAgg || fotmobAgg || sofascoreAgg;
+    const xGData = primaryAggregate?.additionalStats;
+    const xGSource = primaryAggregate?.provider;
+
+    // Extract StatsBomb-specific features if available
+    type StatsBombFeatures = {
+      obvPer90?: number;
+      progressivePassesPer90?: number;
+      progressiveCarriesPer90?: number;
+      pressuresPer90?: number;
+      pressureSuccessRate?: number;
+      shotCreatingActionsPer90?: number;
+      goalCreatingActionsPer90?: number;
+    };
+    let statsbombStats: StatsBombFeatures | undefined;
+
+    if (statsbombAgg?.features) {
+      const features = statsbombAgg.features as Record<string, unknown>;
+      const minutes = (features.minutes as number) || 0;
+
+      // Helper to calculate per90
+      const per90 = (val: unknown): number | undefined => {
+        if (typeof val !== "number" || minutes === 0) return undefined;
+        return (val / minutes) * 90;
+      };
+
+      statsbombStats = {
+        obvPer90: per90(features.obv),
+        progressivePassesPer90: per90(features.progressivePasses),
+        progressiveCarriesPer90: per90(features.progressiveCarries),
+        pressuresPer90: per90(features.pressures),
+        pressureSuccessRate: typeof features.pressureSuccessRate === "number"
+          ? features.pressureSuccessRate
+          : undefined,
+        shotCreatingActionsPer90: per90(features.shotCreatingActions),
+        goalCreatingActionsPer90: per90(features.goalCreatingActions),
+      };
+    }
 
     // Build per90 stats based on window
     const per90Stats = rollingStats?.per90;
@@ -198,15 +256,19 @@ export const buildSnapshot = internalQuery({
         goalsConceded: per90Stats?.goalsConceded,
       },
 
-      // Advanced stats if available
+      // Advanced stats if available (StatsBomb > FotMob > SofaScore)
       advancedStats: xGData
         ? {
             xG: xGData.xG,
             xA: xGData.xA,
             xGPer90: xGData.xGPer90,
             xAPer90: xGData.xAPer90,
+            dataSource: xGSource,
           }
         : undefined,
+
+      // StatsBomb-specific advanced features
+      statsbombStats,
 
       sourcesUsed,
     };

@@ -27,6 +27,11 @@ const badgeVariants = cva(
         gold: "border-transparent bg-yellow-200 text-yellow-800",
         silver: "border-transparent bg-gray-200 text-gray-700",
         bronze: "border-transparent bg-orange-200 text-orange-800",
+        // Data source variants
+        statsbomb: "border-transparent bg-emerald-100 text-emerald-800",
+        fotmob: "border-transparent bg-indigo-100 text-indigo-800",
+        sofascore: "border-transparent bg-purple-100 text-purple-800",
+        apifootball: "border-transparent bg-gray-100 text-gray-700",
       },
     },
     defaultVariants: {

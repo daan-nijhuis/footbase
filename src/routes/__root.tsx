@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import {
   HeadContent,
   Outlet,
@@ -69,18 +69,20 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const routerState = useRouterState();
   const pathname = routerState.location.pathname;
+  const hasRedirected = useRef(false);
 
   // Check if on login page (SSR-safe using router state)
   const isLoginPage = pathname === "/login";
 
   // Redirect to login if not authenticated
-  const shouldRedirect = !isLoginPage && !isPending && !session;
-
   useEffect(() => {
-    if (shouldRedirect) {
+    if (hasRedirected.current) return;
+    if (!isLoginPage && !isPending && !session) {
+      hasRedirected.current = true;
       router.navigate({ to: "/login" });
     }
-  }, [shouldRedirect, router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPending, session, isLoginPage]);
 
   // On login page, only render the page content (no header)
   if (isLoginPage) {

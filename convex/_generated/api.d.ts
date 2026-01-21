@@ -24,6 +24,8 @@ import type * as health from "../health.js";
 import type * as http from "../http.js";
 import type * as ingest_apiFootballIngest from "../ingest/apiFootballIngest.js";
 import type * as ingest_cronRunner from "../ingest/cronRunner.js";
+import type * as ingest_statsbombConfig from "../ingest/statsbombConfig.js";
+import type * as ingest_statsbombIngest from "../ingest/statsbombIngest.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_metrics from "../lib/metrics.js";
 import type * as merge_mergePlayer from "../merge/mergePlayer.js";
@@ -33,11 +35,14 @@ import type * as providers_apiFootballClient from "../providers/apiFootballClien
 import type * as providers_fetchWrapper from "../providers/fetchWrapper.js";
 import type * as providers_fotmob from "../providers/fotmob.js";
 import type * as providers_sofascore from "../providers/sofascore.js";
+import type * as providers_statsbomb from "../providers/statsbomb.js";
+import type * as providers_statsbombClient from "../providers/statsbombClient.js";
 import type * as ratings_aggregate from "../ratings/aggregate.js";
 import type * as ratings_compute from "../ratings/compute.js";
 import type * as ratings_positionMapping from "../ratings/positionMapping.js";
 import type * as ratings_scoring from "../ratings/scoring.js";
 import type * as ratings_seed from "../ratings/seed.js";
+import type * as ratings_statsbombFeatures from "../ratings/statsbombFeatures.js";
 import type * as resolve_resolvePlayer from "../resolve/resolvePlayer.js";
 
 import type {
@@ -63,6 +68,8 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   "ingest/apiFootballIngest": typeof ingest_apiFootballIngest;
   "ingest/cronRunner": typeof ingest_cronRunner;
+  "ingest/statsbombConfig": typeof ingest_statsbombConfig;
+  "ingest/statsbombIngest": typeof ingest_statsbombIngest;
   "lib/auth": typeof lib_auth;
   "lib/metrics": typeof lib_metrics;
   "merge/mergePlayer": typeof merge_mergePlayer;
@@ -72,11 +79,14 @@ declare const fullApi: ApiFromModules<{
   "providers/fetchWrapper": typeof providers_fetchWrapper;
   "providers/fotmob": typeof providers_fotmob;
   "providers/sofascore": typeof providers_sofascore;
+  "providers/statsbomb": typeof providers_statsbomb;
+  "providers/statsbombClient": typeof providers_statsbombClient;
   "ratings/aggregate": typeof ratings_aggregate;
   "ratings/compute": typeof ratings_compute;
   "ratings/positionMapping": typeof ratings_positionMapping;
   "ratings/scoring": typeof ratings_scoring;
   "ratings/seed": typeof ratings_seed;
+  "ratings/statsbombFeatures": typeof ratings_statsbombFeatures;
   "resolve/resolvePlayer": typeof resolve_resolvePlayer;
 }>;
 
